@@ -12,9 +12,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.clock import Clock
 from app.core.security import Hasher
+from app.models.followup import FollowupRules
 from app.repositories.interfaces import TemplateCatalog, UnitOfWork
 from app.repositories.unit_of_work import SqlAlchemyUnitOfWork
 from app.services.event_store import EventService, EventStore
+from app.services.followup import FollowupService
 from app.services.journey import JourneyService
 from app.services.patient import PatientService
 from app.services.protocol import ProtocolService
@@ -40,10 +42,16 @@ def get_catalog(request: Request) -> TemplateCatalog:
     return catalog
 
 
+def get_followup_rules(request: Request) -> FollowupRules:
+    rules: FollowupRules = request.app.state.followup_rules
+    return rules
+
+
 SessionFactoryDep = Annotated[sessionmaker[Session], Depends(get_session_factory)]
 ClockDep = Annotated[Clock, Depends(get_clock)]
 HasherDep = Annotated[Hasher, Depends(get_hasher)]
 CatalogDep = Annotated[TemplateCatalog, Depends(get_catalog)]
+FollowupRulesDep = Annotated[FollowupRules, Depends(get_followup_rules)]
 
 
 def get_uow(session_factory: SessionFactoryDep) -> UnitOfWork:
@@ -78,7 +86,14 @@ def get_journey_service(uow: UnitOfWorkDep, event_store: EventStoreDep, clock: C
     return JourneyService(uow, event_store, clock)
 
 
+def get_followup_service(
+    uow: UnitOfWorkDep, event_store: EventStoreDep, rules: FollowupRulesDep, clock: ClockDep
+) -> FollowupService:
+    return FollowupService(uow, event_store, rules, clock)
+
+
 PatientServiceDep = Annotated[PatientService, Depends(get_patient_service)]
+FollowupServiceDep = Annotated[FollowupService, Depends(get_followup_service)]
 JourneyServiceDep = Annotated[JourneyService, Depends(get_journey_service)]
 ProtocolServiceDep = Annotated[ProtocolService, Depends(get_protocol_service)]
 EventServiceDep = Annotated[EventService, Depends(get_event_service)]
