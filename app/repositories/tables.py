@@ -159,7 +159,9 @@ class EventRow(Base):
 
     __tablename__ = "events"
 
-    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    # Sequência global de gravação: ordena a trilha mesmo quando dois eventos têm o mesmo occurred_at.
+    position: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_id: Mapped[str] = mapped_column(String(36), unique=True)
     occurred_at: Mapped[datetime] = mapped_column(UTCDateTime)
     event_name: Mapped[str] = mapped_column(String(50))
     patient_id_hash: Mapped[str] = mapped_column(String(64))
