@@ -14,7 +14,7 @@ Antes de qualquer linha de código, estas são as regras que o revisor vai checa
 | # | Regra | Como garantimos |
 |---|---|---|
 | 1 | **Sem IA decidindo.** Nada de LLM/heurística no lugar de regra. | Só regras explícitas em JSON + código puro. O objetivo é apenas anotado via API; as tarefas são placeholders configuráveis. |
-| 2 | **Camadas `api → service → repository` reconhecíveis.** | Pastas `app/api`, `app/services`, `app/repositories`. Rotas não contêm regra de negócio. |
+| 2 | **Camadas `api → service → repository` reconhecíveis.** | `app/api/routes` → `app/services` → `app/repositories`, com `app/models` (domínio) e `app/schemas` (HTTP) separados. Rotas não contêm regra de negócio, e `tests/test_architecture.py` falha se uma camada importar na direção errada. |
 | 3 | **Sem `terms_accepted=true` não inicia protocolo nem jornada.** | Erro tipado `missing_consent` → HTTP 403. |
 | 4 | **Telefone é PII.** Persistir `patient_id` + `phone_hash` (SHA-256 com salt via env). | Telefone em claro só no cadastro (`patients`); **nunca** em eventos, logs ou respostas de erro. |
 | 5 | **Eventos sem PII.** `properties` não pode ter telefone, nome nem data de nascimento. | Guard no `append()` do event store + teste dedicado. Texto livre (objetivo, tarefas) também não entra em eventos. |
@@ -34,8 +34,15 @@ Antes de qualquer linha de código, estas são as regras que o revisor vai checa
 # requisitos: uv (baixa o Python 3.12 automaticamente)
 uv sync                                  # cria .venv com Python 3.12 e instala deps (inclusive dev)
 cp .env.example .env                     # define os salts e a URL do banco
-uv run uvicorn app.main:app --reload     # API em http://localhost:8000
+uv run uvicorn --factory app.main:create_app --reload   # API em http://localhost:8000
 uv run pytest                            # suíte de testes
+```
+
+Qualidade (rodam limpos):
+
+```bash
+uv run ruff check . && uv run ruff format --check .   # lint + formatação
+uv run mypy app tests                                  # tipagem estrita
 ```
 
 Documentação interativa: `http://localhost:8000/docs`
@@ -44,62 +51,144 @@ Documentação interativa: `http://localhost:8000/docs`
 
 | Variável | Obrigatória | Descrição |
 |---|---|---|
-| `PHONE_HASH_SALT` | sim | Salt do SHA-256 do telefone. Nunca commitar o valor real. |
-| `EVENT_HASH_SALT` | sim | Salt do `patient_id_hash` dos eventos. Diferente do salt do telefone: o vazamento de um não expõe o outro. |
+| `PHONE_HASH_SALT` | sim | Chave do HMAC-SHA256 do telefone (mín. 16 caracteres). Nunca commitar o valor real. |
+| `EVENT_HASH_SALT` | sim | Chave do HMAC-SHA256 do `patient_id_hash` (mín. 16). **Precisa ser diferente** do salt do telefone; a aplicação recusa subir se forem iguais. |
 | `DATABASE_URL` | não | URL SQLAlchemy do banco. Padrão: `sqlite:///journey_core.db`. O schema é criado na inicialização. |
+| `LOG_LEVEL` | não | Padrão: `INFO`. |
 
 ---
 
 ## Arquitetura
 
+Camadas clássicas, uma pasta por papel e um arquivo por assunto dentro de cada uma:
+
 ```
-HTTP ─► api/ (rotas + schemas Pydantic)
-           │   só valida entrada/saída e traduz erros de domínio em HTTP
+HTTP ─► api/routes/        rotas finas: validam entrada (schemas/) e chamam um service
+           │
            ▼
-        services/ (regras de negócio)
-           │   consentimento · motor de protocolo · jornada · elegibilidade
-           │   toda transição relevante ─► event_store.append()
+        services/          regras de negócio; toda transição relevante grava um evento
+           │
            ▼
-        repositories/ (SQLAlchemy 2)
+        repositories/      interfaces.py (o que os services enxergam) + implementações SQLAlchemy;
+                           recebem e devolvem models/ (nunca linhas do ORM)
+           │
            ▼
         journey_core.db
+
+models/   domínio (dataclasses e eventos), sem banco nem HTTP — usado por todas as camadas
+schemas/  contratos HTTP (Pydantic), separados do domínio
+core/     base técnica: config, banco, segurança, relógio, logging, erros
 ```
 
 ```
 journey-core/
 ├── app/
-│   ├── main.py                    # create_app(): só monta o app e registra routers/handlers
+│   ├── main.py                    # create_app(): monta dependências, rotas e handlers
 │   ├── core/
-│   │   ├── config.py              # settings (salts e banco via env)
-│   │   ├── clock.py               # relógio injetável (testes de cooldown)
-│   │   └── security.py            # hash_phone(), hash_patient_id()
-│   ├── exceptions/
-│   │   ├── errors.py              # AppError + erros tipados (sem dependência de HTTP)
-│   │   └── handlers.py            # mapeia erro → status HTTP + payload padronizado
-│   ├── api/                       # rotas + schemas.py (contratos Pydantic v2)
-│   ├── domain/                    # models.py (entidades)
-│   ├── services/                  # patient, protocol_engine, journey, event_store, eligibility
-│   └── repositories/
-│       ├── database.py            # engine (FKs ligadas no SQLite), sessões e init_db()
-│       ├── orm.py                 # modelos SQLAlchemy: fonte única do schema
-│       ├── patient_repository.py
-│       ├── protocol_session_repository.py
-│       ├── journey_repository.py
-│       └── event_repository.py    # só append() e consultas
+│   │   ├── config.py              # settings validados (salts e banco via env)
+│   │   ├── database.py            # engine, sessões, Base ORM, UTCDateTime
+│   │   ├── security.py            # Hasher: HMAC-SHA256 do telefone e do patient_id
+│   │   ├── clock.py               # Clock (interface) + SystemClock
+│   │   ├── logging.py             # logs JSON com request_id e mascaramento de PII
+│   │   ├── errors.py              # categorias de erro + erros de cada assunto (sem HTTP)
+│   │   └── ids.py                 # new_id() (UUID4)
+│   ├── models/
+│   │   ├── patient.py             # Patient, NewPatient, Sex
+│   │   └── events.py              # EventName, Event, DomainEvent + os 8 eventos (allow-list)
+│   ├── schemas/
+│   │   ├── patient.py             # PatientCreate (normaliza telefone), PatientOut (sem PII)
+│   │   ├── event.py               # EventOut
+│   │   └── common.py              # ErrorResponse, HealthOut
+│   ├── repositories/
+│   │   ├── interfaces.py          # UnitOfWork (expõe os repositórios), PatientRepository, EventRepository
+│   │   ├── patient.py             # SqlAlchemyPatientRepository
+│   │   ├── event.py               # SqlAlchemyEventRepository (só append e consultas)
+│   │   ├── unit_of_work.py        # SqlAlchemyUnitOfWork: uma sessão por `with`, commit explícito
+│   │   └── tables.py              # schema completo (todas as tabelas, constraints, triggers) + init_db()
+│   ├── services/
+│   │   ├── patient.py             # PatientService: cadastro, consulta, aceite dos termos
+│   │   └── event_store.py         # EventStore: única porta da trilha, calcula o hash, bloqueia PII
+│   └── api/
+│       ├── routes/                # health.py, patients.py, events.py
+│       ├── dependencies.py        # injeção de dependência: escolhe as implementações das interfaces
+│       ├── errors.py              # erro → HTTP, formato padrão, sem eco de input
+│       └── middleware.py          # request_id + log de requisição
 ├── templates/
 │   ├── phq9.json                  # perguntas + regras de skip (dados, não código)
 │   └── journey_tasks.json         # tarefas placeholder da jornada
 ├── rules/followup.json            # regras de elegibilidade (dados, não código)
-└── tests/
-    └── conftest.py                # banco temporário por teste + relógio falso
+└── tests/                         # um arquivo por assunto; fakes.py tem as implementações em memória
 ```
+
+### Padrões
+
+| Padrão | Onde | Por quê |
+|---|---|---|
+| **Camadas com direção única** | `api → services → repositories → models` | Cada camada só conhece as de baixo; `tests/test_architecture.py` verifica os imports. |
+| **Composition root** | `create_app(settings, clock)` | Único lugar que escolhe implementações concretas. Testes passam settings e relógio falso, sem globais nem monkeypatch. |
+| **Injeção de dependência** | `api/dependencies.py` | Cada requisição recebe sua sessão e os repositórios/services que a compartilham. |
+| **Interfaces de persistência** | `repositories/interfaces.py` | Services dependem só das interfaces (`Protocol`); as implementações SQLAlchemy são escolhidas em `api/dependencies.py`. Regras de negócio são testadas com implementações em memória (`tests/fakes.py`), sem banco. |
+| **Repository + modelos de domínio** | `repositories/` → `models/` | Repositórios devolvem dataclasses imutáveis, nunca linhas do ORM. |
+| **Unit of Work** | `repositories/interfaces.py` | Única porta da persistência: os repositórios só existem dentro de um `with uow:`, então estado e eventos de uma operação estão sempre na mesma transação. Nada é gravado sem `uow.commit()`. Detalhes em **Transações e concorrência**. |
+| **Eventos com allow-list** | `models/events.py` | Cada evento declara exatamente suas properties (`extra="forbid"`); o nome vem do tipo, então não há como gravar `protocol_completed` com o payload errado. |
+| **Contratos HTTP separados** | `schemas/` | `PatientOut` não tem campo de telefone: vazar na resposta é impossível por construção. |
+| **Relógio injetável** | interface `Clock` em `core/clock.py` | Nenhum código chama `datetime.now()`; o cooldown de 72h é testado avançando o relógio. |
+
+### Proteção de PII (defesa em profundidade)
+
+| Camada | Proteção |
+|---|---|
+| Hash | HMAC-SHA256 (forma padrão de "SHA-256 com segredo"), chaves separadas por finalidade. Telefone normalizado (só dígitos) antes do hash. |
+| Respostas | Schemas de saída sem PII; 422 sem eco do `input`; 500 genérico. |
+| Eventos | Allow-list por evento + bloqueio de chaves proibidas (`phone`, `name`, `birth_date`, `objetivo`...) no `EventStore`. |
+| Domínio | Campos de PII com `repr=False`: não aparecem em logs ou tracebacks se um objeto for logado. |
+| Banco | `hide_parameters=True`: erros do SQLAlchemy não incluem os valores do INSERT. |
+| Logs | Nunca logamos corpo ou query string; ainda assim, sequências longas de dígitos e datas são mascaradas no formatter. Access log do uvicorn desligado (o middleware o substitui com `request_id`). |
+
+### Operação
+
+- **Logs estruturados** (uma linha JSON por evento) com `request_id`, propagado do header `X-Request-ID` (validado) ou gerado, e devolvido na resposta.
+- **`GET /health`** verifica o banco (`SELECT 1`): 200 `ok` ou 503 `degraded`.
+- **Configuração validada na inicialização:** salts ausentes, curtos ou iguais impedem a aplicação de subir.
+- **Qualidade:** `ruff` (lint + format), `mypy --strict`, testes sem rede nem credenciais.
 
 ### Persistência (SQLite)
 
-- **SQLAlchemy 2 (ORM tipado com `Mapped[]`).** Os modelos em `orm.py` são a fonte única do schema. `init_db()` roda `create_all` na inicialização (idempotente). O que o ORM não expressa (triggers append-only de `events`) é anexado como `DDL` no evento `after_create` da tabela.
+- **SQLAlchemy 2 (ORM tipado com `Mapped[]`).** O schema inteiro está em `repositories/tables.py`, fonte única lida de cima a baixo. `init_db()` roda `create_all` na inicialização (idempotente). O que o ORM não expressa (triggers append-only de `events`) é anexado como `DDL` no evento `after_create` da tabela.
 - **Sem migrations por enquanto:** o schema nasce junto com o banco; não há dados de produção para evoluir. Constraints já têm nomes determinísticos (`naming_convention`), o que deixa o caminho pronto para adotar Alembic depois.
-- **Uma sessão por requisição**, entregue às rotas via `Depends`. A engine liga `PRAGMA foreign_keys = ON` em cada conexão (o SQLite vem com FKs desligadas).
-- **Transações explícitas nos services** com `session.begin()`: estado e eventos de uma operação são gravados juntos ou nada é gravado. O commit acontece antes da resposta, então o cliente nunca recebe 201 de algo não persistido.
+- **Conexão SQLite configurada na engine:** `PRAGMA foreign_keys = ON` (o SQLite vem com FKs desligadas), `journal_mode = WAL` (leitores não bloqueiam o escritor) e `BEGIN IMMEDIATE` em toda transação (ver abaixo).
+
+#### Transações e concorrência
+
+O Unit of Work é a única forma de acessar os repositórios:
+
+```python
+with self._uow as uow:                      # abre sessão e transação
+    if uow.patients.exists_by_phone_hash(h):
+        raise PatientAlreadyExistsError     # sai sem commit → rollback
+    uow.patients.add(patient)
+    self._event_store.append(uow, patient_id, PatientCreated())   # o evento exige o uow aberto
+    uow.commit()                            # único ponto em que algo é gravado
+```
+
+- **Atomicidade por construção:** os repositórios são criados pelo próprio Unit of Work sobre a mesma sessão, e `EventStore.append` recebe o `uow`. Não existe caminho para gravar um evento fora da transação da mudança que ele descreve.
+- **Commit explícito, falha segura:** sair do bloco sem `commit()` (exceção ou esquecimento) desfaz tudo. O commit acontece antes da resposta, então o cliente nunca recebe 201 de algo não persistido.
+- **Uma unidade de trabalho por requisição**, criada em `api/dependencies.py`. Sessões nunca são compartilhadas entre threads. Abrir um `with` dentro de outro na mesma instância falha na hora (não é reentrante).
+
+**Condições de corrida "verifica, depois grava".** Várias regras leem antes de escrever; duas requisições simultâneas podem passar pela verificação antes de qualquer uma gravar:
+
+| Regra | Proteção |
+|---|---|
+| Telefone não duplicado | `phone_hash UNIQUE`: a segunda inserção vira 409 |
+| Uma sessão de protocolo em andamento | índice único parcial `WHERE status = 'em_andamento'` |
+| Uma jornada em andamento | índice único parcial `WHERE status = 'em_andamento'` |
+| Cooldown de 72h (janela de tempo, sem constraint possível) | **`BEGIN IMMEDIATE`**: a transação pega o lock de escrita no início, então verificação e escrita rodam serializadas |
+
+`BEGIN IMMEDIATE` também evita o erro `database is locked` do SQLite: com o *busy timeout* de 5s, a segunda escrita espera a primeira em vez de falhar.
+
+**Verificado em teste** (`tests/test_unit_of_work.py`): 10 threads fazem "se não existe evento recente, grava um" ao mesmo tempo. Com `BEGIN IMMEDIATE`, sempre 1 evento. Sem ele (testado desligando o recurso), de 3 a 10 eventos, ou seja, a mesma mensagem de follow-up enviada várias vezes. Outro teste cadastra o mesmo telefone em 10 threads: 1 cadastro, 9 respostas 409, nenhum erro 500.
+
+**Em produção (Postgres):** o equivalente é travar a linha do paciente (`SELECT ... FOR UPDATE`) no início de cada operação, o que serializa só as operações do mesmo paciente, sem bloquear os demais.
 
 #### Tabelas
 
@@ -110,7 +199,7 @@ journey-core/
 | `protocol_answers` | uma linha por resposta; PK `(session_id, question_id)` |
 | `journeys` | `journey_id`, `patient_id`, `session_id` (obrigatório e único), `objetivo` (copiado da sessão), `status` |
 | `journey_tasks` | **uma linha por tarefa**: `task_id`, `journey_id`, `position`, `titulo`, `status`, `completed_at` |
-| `events` | envelope do evento; `properties` como JSON; **sem** colunas de PII e **sem** FK para `patients` (só o hash liga a trilha ao paciente) |
+| `events` | `position` (sequência global, ordena a trilha mesmo com timestamps iguais), envelope do evento, `properties` como JSON; **sem** colunas de PII e **sem** FK para `patients` (só o hash liga a trilha ao paciente) |
 
 ```
 patients 1──* protocol_sessions 1──* protocol_answers
@@ -128,7 +217,7 @@ Segunda linha de defesa: os services validam primeiro, o banco garante mesmo se 
 |---|---|
 | Eventos imutáveis | triggers bloqueiam `UPDATE`/`DELETE` em `events` |
 | Jornada só a partir de protocolo | `journeys.session_id NOT NULL UNIQUE` + FK |
-| Uma jornada ativa por paciente | índice único parcial `WHERE status = 'em_andamento'` |
+| Uma sessão de protocolo e uma jornada em andamento por paciente | índices únicos parciais `WHERE status = 'em_andamento'` |
 | Sem resposta duplicada | PK `(session_id, question_id)` |
 | Estados consistentes | `CHECK`s (sessão concluída tem score e data; termos aceitos têm data) |
 | Telefone não duplicado | `phone_hash UNIQUE` |
@@ -140,36 +229,25 @@ Segunda linha de defesa: os services validam primeiro, o banco garante mesmo se 
 
 ### Tratamento de erros
 
-Exceções ficam em um módulo próprio, `app/exceptions/`, e o `main.py` apenas chama `register_exception_handlers(app)`.
-
-- **`errors.py`:** hierarquia de erros de domínio, sem saber nada de HTTP. Cada erro tem um `code` estável.
+- **`core/errors.py`**: categorias de erro e os erros de cada assunto, sem nada de HTTP. Cada erro tem `code` estável e mensagem fixa (nunca inclui dados do paciente):
 
   ```python
-  class AppError(Exception):
-      code: str = "internal_error"
-
-  class ConsentRequiredError(AppError):        code = "missing_consent"
-  class NotFoundError(AppError):               code = "not_found"
-  class PatientAlreadyExistsError(AppError):   code = "patient_already_exists"
-  class InvalidAnswerError(AppError):          code = "invalid_answer"
-  class SessionClosedError(AppError):          code = "session_closed"
-  class ProtocolInProgressError(AppError):     code = "protocol_in_progress"
-  class JourneyAlreadyActiveError(AppError):   code = "journey_already_active"
+  class PatientNotFoundError(NotFoundError):
+      code = "patient_not_found"
+      message = "Paciente não encontrado."
   ```
 
-- **`handlers.py`:** a única camada que traduz erro → HTTP, por uma tabela explícita:
+- **`api/errors.py`** é a única camada que traduz erro → HTTP, **por categoria**: um erro novo só precisa herdar da categoria certa.
 
-  | Erro | HTTP |
-  |---|---|
-  | `ConsentRequiredError` | 403 |
-  | `NotFoundError` | 404 |
-  | `PatientAlreadyExistsError` | 409 |
-  | `InvalidAnswerError` | 422 |
-  | `SessionClosedError` | 409 |
-  | `ProtocolInProgressError` | 409 |
-  | `JourneyAlreadyActiveError` | 409 |
-  | `RequestValidationError` (FastAPI) | 422, **sem ecoar o `input`** |
-  | `Exception` não tratada | 500 genérico, log sem corpo da requisição |
+  | Categoria | HTTP | Erros |
+  |---|---|---|
+  | `NotFoundError` | 404 | `patient_not_found` |
+  | `PermissionDeniedError` | 403 | `missing_consent` |
+  | `ConflictError` | 409 | `patient_already_exists`, `session_closed`, `protocol_in_progress`, `journey_already_active` |
+  | `BusinessRuleViolationError` | 422 | `invalid_answer` |
+  | `RequestValidationError` (FastAPI) | 422 | `validation_error`, **sem ecoar o `input`** |
+  | `HTTPException` (rota inexistente, método errado) | 404/405 | mesmo formato |
+  | `Exception` não tratada | 500 | genérico, log sem corpo da requisição |
 
 - **Payload padronizado** para todo erro:
 
@@ -185,7 +263,7 @@ Exceções ficam em um módulo próprio, `app/exceptions/`, e o `main.py` apenas
 
 ### Paciente e consentimento
 - `POST /patients` → `phone`, `name`, `birth_date`, `sex` (`F` | `M` | `O`), `terms_accepted`.
-- Persiste `patient_id` (UUID interno) e `phone_hash = SHA-256(PHONE_HASH_SALT + phone)`. O `phone_hash` impede cadastro duplicado (409) sem precisar comparar telefones em claro.
+- Persiste `patient_id` (UUID interno) e `phone_hash = HMAC-SHA256(PHONE_HASH_SALT, telefone normalizado)`. Formatações diferentes do mesmo número (`+55 (11) 98765-4321`, `5511987654321`) geram o mesmo hash. O `phone_hash` impede cadastro duplicado (409) sem precisar comparar telefones em claro.
 - Emite `patient_created` e, se aceito, `terms_accepted`.
 - `POST /patients/{id}/terms` permite aceitar os termos depois do cadastro (emite `terms_accepted`).
 - Iniciar protocolo/jornada sem consentimento → **403** `missing_consent`.
@@ -236,7 +314,7 @@ Envelope mínimo (imutável):
 event_id · occurred_at · event_name · patient_id_hash · properties
 ```
 
-- **`patient_id_hash = SHA-256(EVENT_HASH_SALT + patient_id)`**, calculado em um único lugar: dentro do `EventStore`. Os services passam o `patient_id`; nenhum deles manipula o hash.
+- **`patient_id_hash = HMAC-SHA256(EVENT_HASH_SALT, patient_id)`**, calculado em um único lugar: dentro do `EventStore`. Os services passam o `patient_id`; nenhum deles manipula o hash.
 - **Por que hash do `patient_id` e não o `phone_hash`:** o `patient_id` é um UUID aleatório, então o hash não revela nada mesmo se o salt vazar (telefones são um espaço pequeno e seriam descobertos por força bruta); e a trilha não quebra se o paciente trocar de telefone.
 - **Por que hashear:** pseudonimização (LGPD). A trilha é feita para sair do sistema operacional (ex.: analytics); lá é possível acompanhar um paciente pelo hash, mas não chegar ao cadastro sem o salt. Dentro do journey-core o ganho é pequeno, mas o contrato já nasce pronto para exportação.
 
@@ -299,7 +377,7 @@ Obrigatórios:
 - [ ] Skip PHQ-2: `q1+q2 < 3` encerra com `ended_by_skip=true` e score parcial.
 - [ ] Sem skip: `q1+q2 ≥ 3` segue até a 9ª pergunta.
 - [ ] Recusa sem termos: iniciar protocolo sem consentimento → 403.
-- [ ] PII ausente: nenhum evento serializado contém telefone, nome ou data de nascimento.
+- [x] PII ausente: nenhum evento (na API e direto na tabela) contém telefone, nome ou data de nascimento (`tests/test_pii.py`).
 - [ ] Cooldown 72h: 1ª avaliação elegível, 2ª `cooldown`, após +73h elegível de novo.
 - [ ] Jornada só após protocolo: não existe durante a sessão; existe logo após a resposta que conclui o protocolo (por skip ou pelo fim).
 
@@ -307,10 +385,16 @@ Extras:
 - [ ] Template fictício diferente funciona sem mudar código (prova do motor genérico).
 - [ ] Resposta fora da escala é rejeitada.
 - [ ] Resposta após sessão concluída é rejeitada.
-- [ ] Erro de validação (422) não ecoa o telefone.
+- [x] Erro de validação (422) não ecoa o telefone; 409 e 500 também não; logs sem PII (`tests/test_pii.py`).
 - [ ] Objetivo não aparece em nenhum evento.
 - [ ] Iniciar protocolo com sessão ou jornada em andamento → 409.
-- [x] Banco (`tests/test_database.py`): `init_db` idempotente, eventos imutáveis, jornada exige sessão, uma jornada ativa, sem resposta duplicada, datas em UTC, transação com rollback.
+- [x] Cadastro e termos (`tests/test_patients.py`): sem PII na resposta, telefone duplicado com outra formatação → 409, validações → 422, aceite posterior idempotente.
+- [x] Event store (`tests/test_event_store.py`): hash do id, allow-list, bloqueio de PII, ordem de gravação, isolamento por paciente, janela de tempo, rollback junto com a operação.
+- [x] Segurança e operação (`tests/test_security.py`, `tests/test_app.py`): HMAC, salts validados, mascaramento de logs, health, request id, formato de erro padrão.
+- [x] Regras do paciente sem banco (`tests/test_patient_service.py`): cadastro, duplicidade, falha no meio da operação desfaz cadastro e eventos, aceite posterior e idempotente, usando o Unit of Work em memória (com rollback de verdade).
+- [x] Unit of Work e concorrência (`tests/test_unit_of_work.py`): nada é gravado sem commit, repositórios indisponíveis fora do `with`, não reentrante, cadastro simultâneo do mesmo telefone, verificação + escrita simultâneas serializadas.
+- [x] Arquitetura (`tests/test_architecture.py`): nenhuma camada importa na direção errada; services só enxergam `repositories/interfaces.py`.
+- [x] Banco (`tests/test_persistence.py`): `init_db` idempotente, eventos imutáveis, jornada exige sessão, uma jornada ativa, sem resposta duplicada, datas em UTC, transação com rollback.
 
 
 ---
@@ -357,6 +441,12 @@ Extras:
 - **Texto livre fora dos eventos:** o objetivo pode conter dado de saúde; eventos levam só ids e contagens.
 - **Regras em JSON (não YAML):** mesmo formato dos templates, sem dependência extra (`json` é stdlib) e sem a tipagem implícita do YAML (`no` → `False`). O campo `description` substitui os comentários.
 - **Relógio injetável:** permite testar o cooldown de 72h sem depender do tempo real.
+- **Unit of Work dono dos repositórios, com commit explícito:** a atomicidade de estado + eventos é garantida pelo desenho, não pela forma como as dependências foram montadas. Esquecer o commit perde a escrita em vez de gravar algo pela metade.
+- **`BEGIN IMMEDIATE` no SQLite:** serializa escritas para que regras do tipo "verifica, depois grava" (como o cooldown) não sofram condição de corrida. Custo: escritas não rodam em paralelo, o que é aceitável para o SQLite (que já só tem um escritor por vez) e para transações curtas como as nossas.
+- **HMAC-SHA256 em vez de `sha256(salt + valor)`:** o enunciado pede SHA-256 com salt; HMAC é a construção padrão para isso (concatenação simples tem fraquezas conhecidas).
+- **DTOs (dataclasses imutáveis) entre camadas:** services não dependem do ORM, e PII fica fora do `repr`.
+- **`position` como ordem da trilha:** dois eventos da mesma operação podem ter o mesmo `occurred_at`; a sequência de gravação é a ordem real.
+- **`GET /patients/{id}` sem PII:** útil para conferir o estado do consentimento; devolve só id, sexo, termos e datas (minimização).
 - **Guard de PII no event store:** a regra de "sem PII" é imposta por código, não só por convenção.
 - **Primeira regra que falha define o `reason`:** comportamento previsível e auditável.
 
