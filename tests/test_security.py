@@ -2,6 +2,7 @@ import pytest
 from pydantic import SecretStr, ValidationError
 
 from app.core.config import Settings
+from app.core.logging import redact
 from app.core.security import Hasher, keyed_hash
 
 PHONE = "5511987654321"
@@ -45,3 +46,14 @@ def test_settings_do_not_print_salts() -> None:
     settings = Settings(phone_hash_salt=SecretStr("phone-salt-secret"), event_hash_salt=SecretStr("event-salt-secret"))
     assert "phone-salt-secret" not in repr(settings)
     assert "phone-salt-secret" not in str(settings.model_dump())
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["ligar para +55 (11) 98765-4321", "telefone 5511987654321", "nasceu em 1990-05-10"],
+)
+def test_log_redaction_masks_phones_and_dates(text: str) -> None:
+    redacted = redact(text)
+    assert "[REDACTED]" in redacted
+    assert "98765" not in redacted
+    assert "1990" not in redacted
