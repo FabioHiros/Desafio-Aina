@@ -15,6 +15,7 @@ from app.core.security import Hasher
 from app.repositories.interfaces import TemplateCatalog, UnitOfWork
 from app.repositories.unit_of_work import SqlAlchemyUnitOfWork
 from app.services.event_store import EventService, EventStore
+from app.services.journey import JourneyService
 from app.services.patient import PatientService
 from app.services.protocol import ProtocolService
 
@@ -73,6 +74,11 @@ def get_protocol_service(
     return ProtocolService(uow, event_store, catalog, clock)
 
 
+def get_journey_service(uow: UnitOfWorkDep, event_store: EventStoreDep, clock: ClockDep) -> JourneyService:
+    return JourneyService(uow, event_store, clock)
+
+
 PatientServiceDep = Annotated[PatientService, Depends(get_patient_service)]
+JourneyServiceDep = Annotated[JourneyService, Depends(get_journey_service)]
 ProtocolServiceDep = Annotated[ProtocolService, Depends(get_protocol_service)]
 EventServiceDep = Annotated[EventService, Depends(get_event_service)]

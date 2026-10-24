@@ -5,7 +5,7 @@ from fastapi import FastAPI
 
 from app.api.errors import register_exception_handlers
 from app.api.middleware import request_context
-from app.api.routes import events, health, patients, protocols
+from app.api.routes import events, health, journeys, patients, protocols
 from app.core.clock import Clock, SystemClock
 from app.core.config import Settings
 from app.core.database import create_db_engine, create_session_factory
@@ -45,6 +45,6 @@ def create_app(settings: Settings | None = None, clock: Clock | None = None) -> 
 
     app.middleware("http")(request_context)
     register_exception_handlers(app)
-    for module in (health, patients, protocols, events):
+    for module in (health, patients, protocols, journeys, events):
         app.include_router(module.router)
     return app
