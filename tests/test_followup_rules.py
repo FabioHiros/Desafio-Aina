@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from app.models.followup import Decision, FollowupFacts, FollowupRules, SkipReason
+from app.models.followup import Eligible, FollowupFacts, FollowupRules, Skipped, SkipReason
 from app.models.journey import Journey, JourneyStatus, Task, TaskStatus
 
 NOW = datetime(2026, 10, 24, 12, 0, tzinfo=UTC)
@@ -43,7 +43,7 @@ ELIGIBLE = FollowupFacts(terms_accepted=True, has_completed_protocol=True, journ
 
 
 def test_all_rules_pass() -> None:
-    assert RULES.evaluate(ELIGIBLE, NOW) == Decision(eligible=True, template_key="checkin_adesao")
+    assert RULES.evaluate(ELIGIBLE, NOW) == Eligible(template_key="checkin_adesao")
 
 
 @pytest.mark.parametrize(
@@ -65,12 +65,12 @@ def test_all_rules_pass() -> None:
     ids=["consent", "protocol", "no-journey", "journey-completed", "no-active-task", "cooldown"],
 )
 def test_each_rule_has_its_typed_reason(facts: FollowupFacts, reason: SkipReason) -> None:
-    assert RULES.evaluate(facts, NOW) == Decision(eligible=False, reason=reason)
+    assert RULES.evaluate(facts, NOW) == Skipped(reason=reason)
 
 
 def test_first_failing_rule_defines_the_reason() -> None:
     nothing = FollowupFacts(terms_accepted=False, has_completed_protocol=False, journey=None, last_eligible_at=NOW)
-    assert RULES.evaluate(nothing, NOW).reason is SkipReason.MISSING_CONSENT
+    assert RULES.evaluate(nothing, NOW) == Skipped(SkipReason.MISSING_CONSENT)
 
 
 @pytest.mark.parametrize(
@@ -99,8 +99,8 @@ def test_rules_are_configurable_order_and_window() -> None:
         }
     )
     facts = replace(ELIGIBLE, terms_accepted=False, last_eligible_at=NOW - timedelta(hours=25))
-    assert custom.evaluate(facts, NOW) == Decision(eligible=False, reason=SkipReason.MISSING_CONSENT)
-    assert custom.evaluate(replace(facts, last_eligible_at=NOW), NOW).reason is SkipReason.COOLDOWN
+    assert custom.evaluate(facts, NOW) == Skipped(SkipReason.MISSING_CONSENT)
+    assert custom.evaluate(replace(facts, last_eligible_at=NOW), NOW) == Skipped(SkipReason.COOLDOWN)
 
 
 @pytest.mark.parametrize(

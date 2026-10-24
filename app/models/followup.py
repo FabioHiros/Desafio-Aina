@@ -9,7 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Self
+from typing import ClassVar, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -43,10 +43,18 @@ class FollowupFacts:
 
 
 @dataclass(frozen=True, slots=True)
-class Decision:
-    eligible: bool
-    template_key: str | None = None
-    reason: SkipReason | None = None
+class Eligible:
+    template_key: str
+    eligible: ClassVar[bool] = True
+
+
+@dataclass(frozen=True, slots=True)
+class Skipped:
+    reason: SkipReason
+    eligible: ClassVar[bool] = False
+
+
+Decision = Eligible | Skipped
 
 
 class FollowupRule(BaseModel):
@@ -79,8 +87,8 @@ class FollowupRules(BaseModel):
     def evaluate(self, facts: FollowupFacts, now: datetime) -> Decision:
         for rule in self.rules:
             if not rule.passes(facts, now):
-                return Decision(eligible=False, reason=rule.reason)
-        return Decision(eligible=True, template_key=self.template_key)
+                return Skipped(reason=rule.reason)
+        return Eligible(template_key=self.template_key)
 
 
 def _journey_active(facts: FollowupFacts) -> bool:
