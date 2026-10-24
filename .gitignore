@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Ambiente
+.venv/
+.env
+
+# Banco SQLite local
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

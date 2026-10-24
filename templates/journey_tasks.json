@@ -1,0 +1,8 @@
+{
+  "description": "Tarefas placeholder da jornada criada ao fim do protocolo. A escolha real das tarefas é responsabilidade do agente conversacional e não faz parte do journey-core.",
+  "tarefas": [
+    "Registrar humor diariamente por 7 dias",
+    "Definir um primeiro passo concreto para o objetivo",
+    "Responder ao check-in semanal"
+  ]
+}
