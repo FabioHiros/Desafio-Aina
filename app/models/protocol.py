@@ -11,7 +11,9 @@ bloco conclui o protocolo com a pontuação parcial (soma das respostas dadas). 
 
 import operator
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import StrEnum
 from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -122,3 +124,42 @@ class ProtocolTemplate(_TemplateModel):
 
     def _score(self, answers: Mapping[str, int]) -> int:
         return sum(answers[q.id] for q in self.questions if q.id in answers)
+
+
+# ─────────────── Sessão ───────────────
+
+
+class SessionStatus(StrEnum):
+    IN_PROGRESS = "em_andamento"
+    COMPLETED = "concluido"
+
+
+@dataclass(frozen=True, slots=True)
+class Answer:
+    question_id: str
+    position: int
+    value: int
+    answered_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ProtocolSession:
+    """Sessão de um paciente em um template. Respostas gravadas não mudam (auditoria)."""
+
+    session_id: str
+    patient_id: str
+    template_id: str
+    objetivo: str = field(repr=False)  # texto livre, pode conter dado de saúde
+    status: SessionStatus
+    score: int | None
+    ended_by_skip: bool
+    started_at: datetime
+    completed_at: datetime | None
+    answers: tuple[Answer, ...] = ()
+
+    @property
+    def answer_values(self) -> dict[str, int]:
+        return {answer.question_id: answer.value for answer in self.answers}
+
+    def answer_for(self, question_id: str) -> Answer | None:
+        return next((answer for answer in self.answers if answer.question_id == question_id), None)

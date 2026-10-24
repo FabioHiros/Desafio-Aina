@@ -28,7 +28,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base, UTCDateTime, sql_in
 from app.models.events import EventName
+from app.models.journey import JourneyStatus, TaskStatus
 from app.models.patient import Sex
+from app.models.protocol import SessionStatus
 
 
 def init_db(engine: Engine) -> None:
@@ -85,7 +87,7 @@ class ProtocolSessionRow(Base):
 
     __table_args__ = (
         CheckConstraint("length(objetivo) BETWEEN 1 AND 500", name="objetivo_length"),
-        CheckConstraint(sql_in("status", ("em_andamento", "concluido")), name="status"),
+        CheckConstraint(sql_in("status", SessionStatus), name="status"),
         CheckConstraint(
             "(status = 'concluido') = (completed_at IS NOT NULL AND score IS NOT NULL)", name="completed_state"
         ),
@@ -128,7 +130,7 @@ class JourneyRow(Base):
 
     __table_args__ = (
         CheckConstraint("length(objetivo) BETWEEN 1 AND 500", name="objetivo_length"),
-        CheckConstraint(sql_in("status", ("em_andamento", "concluida")), name="status"),
+        CheckConstraint(sql_in("status", JourneyStatus), name="status"),
         CheckConstraint("(status = 'concluida') = (completed_at IS NOT NULL)", name="completed_state"),
         # No máximo uma jornada em andamento por paciente.
         Index("ux_journeys_one_active", "patient_id", unique=True, sqlite_where=text("status = 'em_andamento'")),
@@ -148,7 +150,7 @@ class JourneyTaskRow(Base):
     __table_args__ = (
         UniqueConstraint("journey_id", "position"),
         CheckConstraint("length(titulo) BETWEEN 1 AND 200", name="titulo_length"),
-        CheckConstraint(sql_in("status", ("em_andamento", "concluida")), name="status"),
+        CheckConstraint(sql_in("status", TaskStatus), name="status"),
         CheckConstraint("(status = 'concluida') = (completed_at IS NOT NULL)", name="completed_state"),
     )
 
