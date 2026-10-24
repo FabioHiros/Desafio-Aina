@@ -94,27 +94,36 @@ journey-core/
 │   │   └── ids.py                 # new_id() (UUID4)
 │   ├── models/
 │   │   ├── patient.py             # Patient, NewPatient, Sex
+│   │   ├── protocol.py            # ProtocolTemplate + motor genérico de skip; ProtocolSession, Answer
+│   │   ├── journey.py             # Journey, Task
 │   │   └── events.py              # EventName, Event, DomainEvent + os 8 eventos (allow-list)
 │   ├── schemas/
 │   │   ├── patient.py             # PatientCreate (normaliza telefone), PatientOut (sem PII)
+│   │   ├── protocol.py            # ProtocolStart, AnswerIn (inteiro estrito), ProtocolSessionOut
+│   │   ├── journey.py             # JourneyOut, TaskUpdate
 │   │   ├── event.py               # EventOut
 │   │   └── common.py              # ErrorResponse, HealthOut
 │   ├── repositories/
-│   │   ├── interfaces.py          # UnitOfWork (expõe os repositórios), PatientRepository, EventRepository
+│   │   ├── interfaces.py          # UnitOfWork (expõe os repositórios), repositórios, TemplateCatalog
 │   │   ├── patient.py             # SqlAlchemyPatientRepository
 │   │   ├── event.py               # SqlAlchemyEventRepository (só append e consultas)
+│   │   ├── protocol_session.py    # SqlAlchemyProtocolSessionRepository
+│   │   ├── journey.py             # SqlAlchemyJourneyRepository (uma linha por tarefa)
+│   │   ├── templates.py           # FileTemplateCatalog: lê e valida templates/ na inicialização
 │   │   ├── unit_of_work.py        # SqlAlchemyUnitOfWork: uma sessão por `with`, commit explícito
 │   │   └── tables.py              # schema completo (todas as tabelas, constraints, triggers) + init_db()
 │   ├── services/
 │   │   ├── patient.py             # PatientService: cadastro, consulta, aceite dos termos
+│   │   ├── protocol.py            # ProtocolService: início, respostas idempotentes, conclusão + jornada
+│   │   ├── journey.py             # JourneyService: consulta e conclusão de tarefas
 │   │   └── event_store.py         # EventStore: única porta da trilha, calcula o hash, bloqueia PII
 │   └── api/
-│       ├── routes/                # health.py, patients.py, events.py
+│       ├── routes/                # health, patients, protocols, journeys, events
 │       ├── dependencies.py        # injeção de dependência: escolhe as implementações das interfaces
 │       ├── errors.py              # erro → HTTP, formato padrão, sem eco de input
 │       └── middleware.py          # request_id + log de requisição
 ├── templates/
-│   ├── phq9.json                  # perguntas + regras de skip (dados, não código)
+│   ├── protocols/phq9.json        # perguntas, escala e regras de skip (dados, não código)
 │   └── journey_tasks.json         # tarefas placeholder da jornada
 ├── rules/followup.json            # regras de elegibilidade (dados, não código)
 └── tests/                         # um arquivo por assunto; fakes.py tem as implementações em memória
@@ -241,9 +250,9 @@ Segunda linha de defesa: os services validam primeiro, o banco garante mesmo se 
 
   | Categoria | HTTP | Erros |
   |---|---|---|
-  | `NotFoundError` | 404 | `patient_not_found` |
+  | `NotFoundError` | 404 | `patient_not_found`, `template_not_found`, `protocol_session_not_found`, `journey_not_found`, `task_not_found` |
   | `PermissionDeniedError` | 403 | `missing_consent` |
-  | `ConflictError` | 409 | `patient_already_exists`, `session_closed`, `protocol_in_progress`, `journey_already_active` |
+  | `ConflictError` | 409 | `patient_already_exists`, `answer_already_recorded`, `unexpected_question`, `session_closed`, `protocol_in_progress`, `journey_already_active` |
   | `BusinessRuleViolationError` | 422 | `invalid_answer` |
   | `RequestValidationError` (FastAPI) | 422 | `validation_error`, **sem ecoar o `input`** |
   | `HTTPException` (rota inexistente, método errado) | 404/405 | mesmo formato |
@@ -269,31 +278,49 @@ Segunda linha de defesa: os services validam primeiro, o banco garante mesmo se 
 - Iniciar protocolo/jornada sem consentimento → **403** `missing_consent`.
 
 ### Motor de protocolo
-Template em JSON é a **única fonte** das perguntas:
+Templates em JSON (`templates/protocols/<template_id>.json`) são a **única fonte** das perguntas, da escala e das regras de skip:
 
 ```json
 {
   "template_id": "phq9",
-  "scale": [0, 1, 2, 3],
-  "questions": [{ "id": "q1", "text": "Pouco interesse ou prazer em fazer as coisas" }],
+  "name": "PHQ-9",
+  "instructions": "Nas últimas duas semanas, com que frequência você foi incomodado por…",
+  "scale": [{ "value": 0, "label": "Nenhuma vez" }, "..."],
+  "questions": [{ "id": "q1", "text": "Pouco interesse ou prazer em fazer as coisas" }, "..."],
   "rules": [
     { "after": "q2", "when": { "sum": ["q1", "q2"], "op": "lt", "value": 3 }, "action": "end_block" }
   ]
 }
 ```
 
-Fluxo por resposta:
-1. Valida a resposta contra a escala do template.
-2. Avalia as regras cujo `after` é a pergunta respondida.
-3. `end_block` → conclui com `ended_by_skip=true` e score parcial.
-4. Senão → devolve a próxima pergunta, ou conclui ao fim das perguntas.
+- **Motor genérico** (`ProtocolTemplate.evaluate()` em `models/protocol.py`): percorre as perguntas em ordem e, após cada pergunta respondida, aplica as regras ligadas a ela. Comparações: `lt`, `lte`, `gt`, `gte`, `eq` sobre a soma das perguntas listadas. Templates têm um único bloco, então `end_block` conclui o protocolo com a soma parcial. Nenhum `if template_id == ...`; um template novo é só um arquivo novo (há teste com um template fictício).
+- **Validado na inicialização:** pergunta inexistente numa regra, regra que soma uma pergunta posterior, ids ou valores de escala repetidos, `template_id` diferente do nome do arquivo: a aplicação não sobe.
+- **Score:** só a soma das respostas dadas. Nenhuma fórmula clínica além disso.
 
 Escala PHQ-9: `0` Nenhuma vez · `1` Vários dias · `2` Mais da metade dos dias · `3` Quase todos os dias.
+
+#### Respostas idempotentes
+
+O cliente sempre diz qual pergunta está respondendo: `{"question_id": "q2", "value": 1}`. Assim, uma resposta reenviada (retry do agente, webhook duplicado do WhatsApp, toque duplo do paciente) nunca é gravada como resposta da pergunta seguinte, o que deslocaria todas as respostas sem nenhum erro aparente.
+
+| Requisição | Resposta |
+|---|---|
+| pergunta pendente | **200**: grava; devolve a próxima pergunta ou o resultado |
+| reenvio idêntico de uma resposta já gravada | **200** com o mesmo conteúdo da primeira vez; nada é gravado |
+| outro valor para uma pergunta já respondida | **409** `answer_already_recorded` (respostas gravadas não mudam) |
+| pergunta diferente da pendente | **409** `unexpected_question`, com a pergunta esperada na mensagem |
+| nova resposta com a sessão concluída | **409** `session_closed` |
+| valor fora da escala | **422** `invalid_answer` |
+| valor que não é inteiro (`"2"`, `1.5`, `true`) | **422** `validation_error` |
+
+Isso vale também para requisições **simultâneas**: 10 threads enviando a mesma resposta ao mesmo tempo recebem todas 200 e a resposta é gravada uma vez (`tests/test_protocol_concurrency.py`). Sem `BEGIN IMMEDIATE`, parte delas recebia 409.
+
+`GET /protocol-sessions/{id}` devolve o estado atual, para o agente retomar após uma falha de comunicação.
 
 **Dono da sessão:** `protocol_sessions.patient_id` (FK para `patients`), gravado ao iniciar e nunca alterado. A rota de respostas segue o enunciado (`/protocol-sessions/{id}/answers`, sem o paciente na URL): o service carrega a sessão e obtém o paciente dela, usado na jornada e nos eventos. Sem autenticação (fora do escopo), quem conhece um `session_id` pode respondê-lo; o risco é baixo porque os ids são UUIDs aleatórios, e em produção a API ficaria atrás de autenticação entre serviços.
 
 ### Jornada
-Segue o enunciado: **quando o protocolo conclui, a jornada é criada**, na mesma transação que grava `protocol_completed` e `journey_created`.
+Segue o enunciado: **quando o protocolo conclui (por skip ou pelo fim), a jornada é criada** na mesma transação: sessão concluída, `protocol_completed`, jornada e `journey_created` são gravados juntos, ou nada é gravado (há teste que força falha na jornada e confirma que a sessão continua em andamento).
 
 - **Objetivo:** texto livre, apenas anotado via API ao iniciar o protocolo e copiado para a jornada:
   ```
@@ -302,10 +329,10 @@ Segue o enunciado: **quando o protocolo conclui, a jornada é criada**, na mesma
   ```
   `objetivo` com 1–500 caracteres; fora disso → 422.
 - **Tarefas:** placeholders lidos de `templates/journey_tasks.json`. A escolha de quais tarefas levam a um objetivo é responsabilidade do agente conversacional e não faz parte do desafio (confirmado com o recrutador); o arquivo só deixa os dados da jornada realistas.
+- A resposta que conclui o protocolo já traz o `journey_id`; `GET /patients/{id}/journey` devolve a jornada em andamento (ou a mais recente), e 404 enquanto nenhum protocolo foi concluído.
+- `PATCH /journeys/{id}/tasks/{task_id}` com `{"status": "concluida"}` conclui a tarefa → `task_completed`. Idempotente. Ao concluir a última tarefa, a jornada passa a `concluida`. Tarefas concluídas não reabrem.
 - Iniciar um protocolo é recusado com 409 se o paciente já tem uma sessão em andamento (`protocol_in_progress`) ou uma jornada em andamento (`journey_already_active`). Assim, a conclusão de um protocolo nunca conflita com outra jornada.
-- Status: `em_andamento` → `concluida` quando todas as tarefas são concluídas.
-- `PATCH /journeys/{id}/tasks/{task_id}` conclui uma tarefa → `task_completed`.
-- **LGPD:** o objetivo é texto livre e pode conter dado de saúde (dado sensível). Fica só nas tabelas de sessão e jornada; eventos levam apenas ids e contagens (`journey_id`, `task_count`).
+- **LGPD:** o objetivo é texto livre e pode conter dado de saúde (dado sensível). Fica só nas tabelas de sessão e jornada; eventos levam apenas ids e contagens (`journey_id`, `task_count`). Há teste lendo a tabela `events` direto.
 
 ### Event store
 Envelope mínimo (imutável):
@@ -362,32 +389,37 @@ Regras declarativas avaliadas em ordem; a primeira que falha define o `reason`:
 |---|---|---|
 | `POST` | `/patients` | Cria paciente |
 | `POST` | `/patients/{id}/terms` | Aceita os termos após o cadastro |
-| `POST` | `/patients/{id}/protocols` | Inicia sessão a partir de `template_id` e anota o `objetivo` |
-| `POST` | `/protocol-sessions/{id}/answers` | Envia resposta; retorna próxima pergunta ou resultado (com a jornada criada) |
-| `GET` | `/patients/{id}/journey` | Consulta a jornada ativa |
-| `PATCH` | `/journeys/{id}/tasks/{task_id}` | Marca tarefa como concluída |
-| `POST` | `/followups/evaluate` | Avalia elegibilidade de follow-up |
+| `GET` | `/patients/{id}` | Consulta o paciente (sem PII) |
+| `POST` | `/patients/{id}/protocols` | Inicia sessão a partir de `template_id` e anota o `objetivo`; devolve a 1ª pergunta |
+| `POST` | `/protocol-sessions/{id}/answers` | `{question_id, value}`; devolve a próxima pergunta ou o resultado (com o `journey_id`) |
+| `GET` | `/protocol-sessions/{id}` | Estado atual da sessão (retomar após falha) |
+| `GET` | `/patients/{id}/journey` | Jornada em andamento (ou a mais recente) |
+| `PATCH` | `/journeys/{id}/tasks/{task_id}` | `{"status": "concluida"}`: conclui a tarefa |
+| `POST` | `/followups/evaluate` | Avalia elegibilidade de follow-up *(dia 3)* |
 | `GET` | `/events?patient_id=...` | Trilha de eventos do paciente (por id interno) |
+| `GET` | `/health` | Verifica o banco |
 
 ---
 
 ## Testes
 
 Obrigatórios:
-- [ ] Skip PHQ-2: `q1+q2 < 3` encerra com `ended_by_skip=true` e score parcial.
-- [ ] Sem skip: `q1+q2 ≥ 3` segue até a 9ª pergunta.
-- [ ] Recusa sem termos: iniciar protocolo sem consentimento → 403.
+- [x] Skip PHQ-2: `q1+q2 < 3` encerra com `ended_by_skip=true` e score parcial (`tests/test_protocols_api.py`, `tests/test_protocol_template.py`).
+- [x] Sem skip: `q1+q2 ≥ 3` segue até a 9ª pergunta.
+- [x] Recusa sem termos: iniciar protocolo sem consentimento → 403 `missing_consent`.
 - [x] PII ausente: nenhum evento (na API e direto na tabela) contém telefone, nome ou data de nascimento (`tests/test_pii.py`).
 - [ ] Cooldown 72h: 1ª avaliação elegível, 2ª `cooldown`, após +73h elegível de novo.
-- [ ] Jornada só após protocolo: não existe durante a sessão; existe logo após a resposta que conclui o protocolo (por skip ou pelo fim).
+- [x] Jornada só após protocolo: 404 antes e durante a sessão; existe logo após a resposta que conclui o protocolo (`tests/test_journeys_api.py`).
 
 Extras:
-- [ ] Template fictício diferente funciona sem mudar código (prova do motor genérico).
-- [ ] Resposta fora da escala é rejeitada.
-- [ ] Resposta após sessão concluída é rejeitada.
+- [x] Template fictício diferente funciona sem mudar código (prova do motor genérico); templates inválidos impedem a aplicação de subir (`tests/test_template_catalog.py`).
+- [x] Respostas: reenvio idêntico → mesma resposta; mudar resposta, fora de ordem, sessão concluída → 409; fora da escala ou não inteiro → 422.
+- [x] Respostas e inícios simultâneos (`tests/test_protocol_concurrency.py`): mesma resposta enviada 10 vezes ao mesmo tempo é gravada uma vez e todas recebem 200; uma jornada e uma sessão por paciente.
+- [x] Jornada criada na mesma transação da conclusão: falha na jornada desfaz a conclusão (`tests/test_protocol_service.py`).
+- [x] Tarefas: concluir emite `task_completed`, é idempotente, e a última conclui a jornada.
 - [x] Erro de validação (422) não ecoa o telefone; 409 e 500 também não; logs sem PII (`tests/test_pii.py`).
-- [ ] Objetivo não aparece em nenhum evento.
-- [ ] Iniciar protocolo com sessão ou jornada em andamento → 409.
+- [x] Objetivo não aparece em nenhum evento (API e tabela).
+- [x] Iniciar protocolo com sessão ou jornada em andamento → 409.
 - [x] Cadastro e termos (`tests/test_patients.py`): sem PII na resposta, telefone duplicado com outra formatação → 409, validações → 422, aceite posterior idempotente.
 - [x] Event store (`tests/test_event_store.py`): hash do id, allow-list, bloqueio de PII, ordem de gravação, isolamento por paciente, janela de tempo, rollback junto com a operação.
 - [x] Segurança e operação (`tests/test_security.py`, `tests/test_app.py`): HMAC, salts validados, mascaramento de logs, health, request id, formato de erro padrão.
@@ -402,7 +434,23 @@ Extras:
 ## Roteiro de revisão (~15 min)
 
 1. Subir a API seguindo **Como rodar**.
-2. Criar paciente → iniciar o PHQ com um objetivo (`{ "template_id": "phq9", "objetivo": "Perder 5kg em 3 meses" }`) → responder até skip ou fim → ver a jornada criada.
+2. Criar paciente → iniciar o PHQ → responder até skip → ver a jornada criada (em `http://localhost:8000/docs` ou com `curl`):
+   ```bash
+   API=http://localhost:8000
+   PATIENT=$(curl -s -X POST $API/patients -H 'content-type: application/json' \
+     -d '{"phone":"+55 11 98765-4321","name":"Maria Teste","birth_date":"1990-05-10","sex":"F","terms_accepted":true}' \
+     | python3 -c 'import sys,json; print(json.load(sys.stdin)["patient_id"])')
+
+   SESSION=$(curl -s -X POST $API/patients/$PATIENT/protocols -H 'content-type: application/json' \
+     -d '{"template_id":"phq9","objetivo":"Perder 5kg em 3 meses"}' \
+     | python3 -c 'import sys,json; print(json.load(sys.stdin)["session_id"])')
+
+   curl -s -X POST $API/protocol-sessions/$SESSION/answers -H 'content-type: application/json' -d '{"question_id":"q1","value":1}'
+   curl -s -X POST $API/protocol-sessions/$SESSION/answers -H 'content-type: application/json' -d '{"question_id":"q2","value":1}'
+   # → "status": "concluido", "score": 2, "ended_by_skip": true, "journey_id": "..."
+   curl -s $API/patients/$PATIENT/journey
+   ```
+   Para ver o fluxo sem skip, responda `q1` e `q2` com valores que somem 3 ou mais e siga a `next_question` até a 9ª.
 3. Avaliar follow-up duas vezes → observar `cooldown` na segunda.
 4. `GET /events?patient_id=...` → confirmar ausência de PII.
 
@@ -441,6 +489,10 @@ Extras:
 - **Texto livre fora dos eventos:** o objetivo pode conter dado de saúde; eventos levam só ids e contagens.
 - **Regras em JSON (não YAML):** mesmo formato dos templates, sem dependência extra (`json` é stdlib) e sem a tipagem implícita do YAML (`no` → `False`). O campo `description` substitui os comentários.
 - **Relógio injetável:** permite testar o cooldown de 72h sem depender do tempo real.
+- **Resposta identifica a pergunta (`question_id`) e reenvio idêntico é idempotente:** com WhatsApp e agentes que fazem retry, a mesma resposta pode chegar duas vezes. Só com o valor, o reenvio seria gravado como resposta da pergunta seguinte, deslocando todas as respostas (e potencialmente o item 9, de risco) sem nenhum erro. Respostas gravadas não mudam: corrigir exigiria uma funcionalidade explícita.
+- **Valor da resposta como inteiro estrito:** `"2"` ou `true` são recusados (422) em vez de convertidos; em dado clínico, conversão silenciosa esconde bugs do cliente.
+- **Templates validados na inicialização:** um template inconsistente impede a aplicação de subir, em vez de falhar no meio da sessão de um paciente.
+- **Jornada criada na mesma transação que conclui o protocolo:** não existe estado intermediário "protocolo concluído sem jornada".
 - **Unit of Work dono dos repositórios, com commit explícito:** a atomicidade de estado + eventos é garantida pelo desenho, não pela forma como as dependências foram montadas. Esquecer o commit perde a escrita em vez de gravar algo pela metade.
 - **`BEGIN IMMEDIATE` no SQLite:** serializa escritas para que regras do tipo "verifica, depois grava" (como o cooldown) não sofram condição de corrida. Custo: escritas não rodam em paralelo, o que é aceitável para o SQLite (que já só tem um escritor por vez) e para transações curtas como as nossas.
 - **HMAC-SHA256 em vez de `sha256(salt + valor)`:** o enunciado pede SHA-256 com salt; HMAC é a construção padrão para isso (concatenação simples tem fraquezas conhecidas).
