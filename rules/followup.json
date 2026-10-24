@@ -1,0 +1,31 @@
+{
+  "template_key": "checkin_adesao",
+  "rules": [
+    {
+      "check": "terms_accepted",
+      "reason": "missing_consent",
+      "description": "Paciente precisa ter aceitado os termos"
+    },
+    {
+      "check": "protocol_completed",
+      "reason": "no_completed_protocol",
+      "description": "Ao menos um protocolo concluído"
+    },
+    {
+      "check": "journey_active",
+      "reason": "no_active_journey",
+      "description": "Jornada em andamento"
+    },
+    {
+      "check": "has_active_task",
+      "reason": "no_active_task",
+      "description": "Ao menos uma tarefa em andamento"
+    },
+    {
+      "check": "cooldown",
+      "reason": "cooldown",
+      "params": { "hours": 72 },
+      "description": "No máximo um follow-up elegível a cada 72h"
+    }
+  ]
+}

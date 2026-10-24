@@ -4,6 +4,8 @@ from typing import Self
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -12,7 +14,8 @@ class Settings(BaseSettings):
     event_hash_salt: SecretStr = Field(min_length=16)
     database_url: str = "sqlite:///journey_core.db"
     log_level: str = "INFO"
-    templates_dir: Path = Path(__file__).resolve().parents[2] / "templates"
+    templates_dir: Path = PROJECT_ROOT / "templates"
+    followup_rules_path: Path = PROJECT_ROOT / "rules" / "followup.json"
 
     @model_validator(mode="after")
     def salts_must_differ(self) -> Self:
