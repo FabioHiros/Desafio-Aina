@@ -9,8 +9,9 @@ from types import TracebackType
 from typing import Any, Protocol, Self
 
 from app.models.events import Event, EventName
+from app.models.journey import Journey
 from app.models.patient import Patient
-from app.models.protocol import ProtocolTemplate
+from app.models.protocol import Answer, ProtocolSession, ProtocolTemplate
 
 
 class PatientRepository(Protocol):
@@ -48,6 +49,44 @@ class EventRepository(Protocol):
         ...
 
 
+class ProtocolSessionRepository(Protocol):
+    def add(self, protocol_session: ProtocolSession) -> None:
+        """Raises ProtocolInProgressError se o paciente já tiver uma sessão em andamento."""
+        ...
+
+    def get(self, session_id: str) -> ProtocolSession | None:
+        """Sessão com as respostas, em ordem."""
+        ...
+
+    def has_in_progress(self, patient_id: str) -> bool: ...
+
+    def add_answer(self, session_id: str, answer: Answer) -> None:
+        """Raises AnswerAlreadyRecordedError se a pergunta já tiver resposta (respostas não mudam)."""
+        ...
+
+    def complete(self, session_id: str, score: int, ended_by_skip: bool, completed_at: datetime) -> None: ...
+
+
+class JourneyRepository(Protocol):
+    def add(self, journey: Journey) -> None:
+        """Grava a jornada e as tarefas. Raises JourneyAlreadyActiveError se já houver uma em andamento."""
+        ...
+
+    def get(self, journey_id: str) -> Journey | None: ...
+
+    def get_by_session(self, session_id: str) -> Journey | None: ...
+
+    def get_current_for_patient(self, patient_id: str) -> Journey | None:
+        """A jornada em andamento, ou a mais recente se nenhuma estiver em andamento."""
+        ...
+
+    def has_active(self, patient_id: str) -> bool: ...
+
+    def complete_task(self, task_id: str, completed_at: datetime) -> None: ...
+
+    def complete(self, journey_id: str, completed_at: datetime) -> None: ...
+
+
 class UnitOfWork(Protocol):
     """Única porta de entrada da persistência: os repositórios só existem dentro de uma unidade de trabalho.
 
@@ -65,6 +104,12 @@ class UnitOfWork(Protocol):
 
     @property
     def events(self) -> EventRepository: ...
+
+    @property
+    def sessions(self) -> ProtocolSessionRepository: ...
+
+    @property
+    def journeys(self) -> JourneyRepository: ...
 
     def __enter__(self) -> Self: ...
 

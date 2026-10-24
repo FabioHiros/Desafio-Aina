@@ -4,7 +4,9 @@ from typing import Self
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.repositories.event import SqlAlchemyEventRepository
+from app.repositories.journey import SqlAlchemyJourneyRepository
 from app.repositories.patient import SqlAlchemyPatientRepository
+from app.repositories.protocol_session import SqlAlchemyProtocolSessionRepository
 
 
 class SqlAlchemyUnitOfWork:
@@ -25,6 +27,8 @@ class SqlAlchemyUnitOfWork:
         self._session = self._session_factory()
         self._patients = SqlAlchemyPatientRepository(self._session)
         self._events = SqlAlchemyEventRepository(self._session)
+        self._sessions = SqlAlchemyProtocolSessionRepository(self._session)
+        self._journeys = SqlAlchemyJourneyRepository(self._session)
         return self
 
     def __exit__(
@@ -45,6 +49,16 @@ class SqlAlchemyUnitOfWork:
     def events(self) -> SqlAlchemyEventRepository:
         self._active_session  # noqa: B018 - falha se usado fora do `with`
         return self._events
+
+    @property
+    def sessions(self) -> SqlAlchemyProtocolSessionRepository:
+        self._active_session  # noqa: B018 - falha se usado fora do `with`
+        return self._sessions
+
+    @property
+    def journeys(self) -> SqlAlchemyJourneyRepository:
+        self._active_session  # noqa: B018 - falha se usado fora do `with`
+        return self._journeys
 
     def commit(self) -> None:
         self._active_session.commit()
