@@ -8,8 +8,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
 from app.core.config import Settings
+from app.core.security import keyed_hash
 from app.main import create_app
-from tests.conftest import PATIENT_PAYLOAD, PII_VALUES
+from app.models.events import EventName
+from tests.conftest import PATIENT_PAYLOAD, PHONE_DIGITS, PII_VALUES
 from tests.fakes import FakeClock
 
 
@@ -97,3 +99,36 @@ def test_objective_never_reaches_the_event_trail(client: TestClient, patient_id:
         stored = repr(connection.execute(text("SELECT properties FROM events")).fetchall())
     engine.dispose()
     assert objetivo not in stored
+
+
+def test_full_journey_trail_never_contains_pii(
+    client: TestClient, settings: Settings, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Fluxo completo, gerando todos os tipos de evento: nenhum carrega PII, nem o phone_hash."""
+    with caplog.at_level(logging.DEBUG):
+        patient_id = client.post("/patients", json=PATIENT_PAYLOAD).json()["patient_id"]
+        session_id = client.post(
+            f"/patients/{patient_id}/protocols", json={"template_id": "phq9", "objetivo": "Dormir melhor"}
+        ).json()["session_id"]
+        for question_id in ("q1", "q2"):
+            client.post(f"/protocol-sessions/{session_id}/answers", json={"question_id": question_id, "value": 0})
+        journey = client.get(f"/patients/{patient_id}/journey").json()
+        client.post("/followups/evaluate", json={"patient_id": patient_id})  # elegível
+        client.post("/followups/evaluate", json={"patient_id": patient_id})  # cooldown
+        for task in journey["tarefas"]:
+            client.patch(f"/journeys/{journey['journey_id']}/tasks/{task['id']}", json={"status": "concluida"})
+        trail = client.get("/events", params={"patient_id": patient_id}).text
+
+    assert {event["event_name"] for event in json.loads(trail)} == set(EventName)
+
+    engine = create_engine(settings.database_url)
+    with engine.connect() as connection:
+        stored = repr(connection.execute(text("SELECT * FROM events")).fetchall())
+    engine.dispose()
+
+    phone_hash = keyed_hash(PHONE_DIGITS, settings.phone_hash_salt)
+    logged = "\n".join(record.getMessage() for record in caplog.records)
+    for value in (*PII_VALUES, phone_hash):
+        assert value not in trail
+        assert value not in stored
+        assert value not in logged
