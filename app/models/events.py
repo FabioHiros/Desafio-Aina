@@ -12,6 +12,8 @@ from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict
 
+from app.models.followup import SkipReason
+
 
 class EventName(StrEnum):
     PATIENT_CREATED = "patient_created"
@@ -104,4 +106,4 @@ class FollowupEligible(DomainEvent):
 class FollowupSkipped(DomainEvent):
     event_name = EventName.FOLLOWUP_SKIPPED
 
-    reason: str
+    reason: SkipReason
