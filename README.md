@@ -436,7 +436,7 @@ Obrigatórios:
 - [x] Skip PHQ-2: `q1+q2 < 3` encerra com `ended_by_skip=true` e score parcial (`tests/test_protocols_api.py`, `tests/test_protocol_template.py`).
 - [x] Sem skip: `q1+q2 ≥ 3` segue até a 9ª pergunta.
 - [x] Recusa sem termos: iniciar protocolo sem consentimento → 403 `missing_consent`.
-- [x] PII ausente: num fluxo completo que gera todos os tipos de evento, nenhum evento (na API e direto na tabela) nem log contém telefone, nome, data de nascimento ou o `phone_hash` (`tests/test_pii.py`).
+- [x] PII ausente: num fluxo completo que gera todos os tipos de evento, nenhum evento (na API e direto na tabela) contém telefone, nome, data de nascimento, `phone_hash` ou o `patient_id` em claro; os logs da aplicação, tracebacks incluídos, não contêm telefone, nome, data de nascimento nem `phone_hash` (`tests/test_pii.py`).
 - [x] Cooldown 72h: 1ª avaliação elegível, 2ª `cooldown`, 71h59 depois ainda `cooldown`, exatamente 72h depois elegível de novo (`tests/test_followups_api.py`, `tests/test_followup_service.py`).
 - [x] Jornada só após protocolo: 404 antes e durante a sessão; existe logo após a resposta que conclui o protocolo (`tests/test_journeys_api.py`).
 

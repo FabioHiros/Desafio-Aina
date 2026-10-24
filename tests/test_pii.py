@@ -61,8 +61,8 @@ def test_logs_never_contain_pii(client: TestClient, caplog: pytest.LogCaptureFix
         client.post("/patients", json={**PATIENT_PAYLOAD, "sex": "X"})  # 422
         client.get("/events", params={"patient_id": patient_id})
 
-    logged = "\n".join(record.getMessage() for record in caplog.records)
-    assert logged  # houve log de requisições
+    logged = caplog.text  # inclui tracebacks, sem a máscara do JsonFormatter
+    assert "POST /patients -> 409" in logged  # a captura dos logs da aplicação funcionou
     for value in PII_VALUES:
         assert value not in logged
 
@@ -104,31 +104,58 @@ def test_objective_never_reaches_the_event_trail(client: TestClient, patient_id:
 def test_full_journey_trail_never_contains_pii(
     client: TestClient, settings: Settings, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Fluxo completo, gerando todos os tipos de evento: nenhum carrega PII, nem o phone_hash."""
+    """Fluxo completo, gerando todos os tipos de evento: nenhum carrega PII, o phone_hash ou o patient_id."""
     with caplog.at_level(logging.DEBUG):
-        patient_id = client.post("/patients", json=PATIENT_PAYLOAD).json()["patient_id"]
-        session_id = client.post(
-            f"/patients/{patient_id}/protocols", json={"template_id": "phq9", "objetivo": "Dormir melhor"}
-        ).json()["session_id"]
-        for question_id in ("q1", "q2"):
-            client.post(f"/protocol-sessions/{session_id}/answers", json={"question_id": question_id, "value": 0})
-        journey = client.get(f"/patients/{patient_id}/journey").json()
-        client.post("/followups/evaluate", json={"patient_id": patient_id})  # elegível
-        client.post("/followups/evaluate", json={"patient_id": patient_id})  # cooldown
-        for task in journey["tarefas"]:
-            client.patch(f"/journeys/{journey['journey_id']}/tasks/{task['id']}", json={"status": "concluida"})
-        trail = client.get("/events", params={"patient_id": patient_id}).text
+        created = client.post("/patients", json=PATIENT_PAYLOAD)
+        assert created.status_code == 201
+        patient_id = created.json()["patient_id"]
 
-    assert {event["event_name"] for event in json.loads(trail)} == set(EventName)
+        started = client.post(
+            f"/patients/{patient_id}/protocols", json={"template_id": "phq9", "objetivo": "Dormir melhor"}
+        )
+        assert started.status_code == 201
+        session_id = started.json()["session_id"]
+        for question_id in ("q1", "q2"):
+            answered = client.post(
+                f"/protocol-sessions/{session_id}/answers", json={"question_id": question_id, "value": 0}
+            )
+            assert answered.status_code == 200
+        assert answered.json()["ended_by_skip"] is True
+
+        journey = client.get(f"/patients/{patient_id}/journey")
+        assert journey.status_code == 200
+
+        first = client.post("/followups/evaluate", json={"patient_id": patient_id})
+        second = client.post("/followups/evaluate", json={"patient_id": patient_id})
+        assert first.json()["eligible"] is True
+        assert second.json()["reason"] == "cooldown"
+
+        for task in journey.json()["tarefas"]:
+            completed = client.patch(
+                f"/journeys/{journey.json()['journey_id']}/tasks/{task['id']}", json={"status": "concluida"}
+            )
+            assert completed.status_code == 200
+        assert completed.json()["status"] == "concluida"
+
+        events = client.get("/events", params={"patient_id": patient_id})
+        assert events.status_code == 200
+
+    trail = events.text
+    assert {event["event_name"] for event in events.json()} == set(EventName)
 
     engine = create_engine(settings.database_url)
     with engine.connect() as connection:
         stored = repr(connection.execute(text("SELECT * FROM events")).fetchall())
     engine.dispose()
 
+    # caplog.text inclui tracebacks e não passa pela máscara do JsonFormatter: é a checagem mais estrita.
+    logged = caplog.text
+    assert "POST /followups/evaluate -> 200" in logged  # a captura dos logs da aplicação funcionou
+
     phone_hash = keyed_hash(PHONE_DIGITS, settings.phone_hash_salt)
-    logged = "\n".join(record.getMessage() for record in caplog.records)
     for value in (*PII_VALUES, phone_hash):
         assert value not in trail
         assert value not in stored
         assert value not in logged
+    assert patient_id not in trail
+    assert patient_id not in stored
