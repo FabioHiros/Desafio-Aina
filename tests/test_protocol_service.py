@@ -1,4 +1,4 @@
-"""Sessões de protocolo sem banco nem HTTP: regras de início, respostas idempotentes e conclusão."""
+"""Sessões de protocolo sem banco nem HTTP: início, respostas idempotentes, conclusão e criação da jornada."""
 
 from dataclasses import dataclass, replace
 from datetime import date
@@ -11,6 +11,7 @@ from app.core.errors import (
     AnswerAlreadyRecordedError,
     ConsentRequiredError,
     InvalidAnswerError,
+    JourneyAlreadyActiveError,
     PatientNotFoundError,
     ProtocolInProgressError,
     ProtocolSessionNotFoundError,
@@ -134,8 +135,8 @@ def test_phq2_skip_completes_with_partial_score(world: World) -> None:
     assert state.session.status is SessionStatus.COMPLETED
     assert (state.session.score, state.session.ended_by_skip) == (2, True)
     assert state.session.completed_at == world.clock.now()
-    assert world.events() == [EventName.PROTOCOL_STARTED, EventName.PROTOCOL_COMPLETED]
-    completed = world.uow.events.events[-1].properties
+    assert world.events() == [EventName.PROTOCOL_STARTED, EventName.PROTOCOL_COMPLETED, EventName.JOURNEY_CREATED]
+    completed = world.uow.events.events[1].properties
     assert completed == {"session_id": session_id, "template_id": "phq9", "score": 2, "ended_by_skip": True}
 
 
@@ -230,3 +231,68 @@ def test_objective_never_reaches_events(world: World) -> None:
     world.answer_all(session_id, 1, 1)
 
     assert "Perder 5kg" not in repr([e.properties for e in world.uow.events.events])
+
+
+# ─────────────── Jornada criada ao concluir ───────────────
+
+
+def test_no_journey_while_the_protocol_is_in_progress(world: World) -> None:
+    session_id = start(world).session.session_id
+    state = world.answer_all(session_id, 2, 1)
+
+    assert state.journey is None
+    assert world.uow.journeys.journeys == {}
+    assert EventName.JOURNEY_CREATED not in world.events()
+
+
+@pytest.mark.parametrize("values", [(1, 1), (3, 3, 3, 3, 3, 3, 3, 3, 3)], ids=["skip", "full"])
+def test_journey_is_created_when_the_protocol_completes(world: World, values: tuple[int, ...]) -> None:
+    session_id = start(world).session.session_id
+
+    state = world.answer_all(session_id, *values)
+
+    journey = state.journey
+    assert journey is not None
+    assert journey.session_id == session_id
+    assert journey.objetivo == "Perder 5kg em 3 meses"
+    assert journey.created_at == world.clock.now()
+    assert [t.titulo for t in journey.tasks] == ["Tarefa A", "Tarefa B"]
+    assert [t.position for t in journey.tasks] == [1, 2]
+    assert world.events()[-2:] == [EventName.PROTOCOL_COMPLETED, EventName.JOURNEY_CREATED]
+    created = world.uow.events.events[-1].properties
+    assert created == {"journey_id": journey.journey_id, "session_id": session_id, "task_count": 2}
+
+
+def test_resend_of_final_answer_returns_the_same_journey(world: World) -> None:
+    session_id = start(world).session.session_id
+    first = world.answer_all(session_id, 1, 1)
+
+    again = world.service.answer(session_id, "q2", 1)
+
+    assert again.journey == first.journey
+    assert len(world.uow.journeys.journeys) == 1
+
+
+def test_journey_failure_rolls_back_the_completion(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sessão concluída, protocol_completed, jornada e journey_created: tudo junto ou nada."""
+    session_id = start(world).session.session_id
+    world.service.answer(session_id, "q1", 1)
+
+    def fail(*args: object) -> None:
+        raise RuntimeError("falha ao gravar a jornada")
+
+    monkeypatch.setattr(world.uow.journeys, "add", fail)
+    with pytest.raises(RuntimeError):
+        world.service.answer(session_id, "q2", 1)
+
+    session = world.service.get(session_id).session
+    assert session.status is SessionStatus.IN_PROGRESS
+    assert session.answer_values == {"q1": 1}
+    assert world.events() == [EventName.PROTOCOL_STARTED]
+
+
+def test_new_protocol_is_blocked_while_the_journey_is_active(world: World) -> None:
+    world.answer_all(start(world).session.session_id, 1, 1)
+
+    with pytest.raises(JourneyAlreadyActiveError):
+        start(world)

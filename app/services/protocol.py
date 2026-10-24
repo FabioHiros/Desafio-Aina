@@ -1,5 +1,8 @@
 """Sessões de protocolo: início, respostas (idempotentes) e conclusão.
 
+Quando o protocolo conclui (por skip ou pelo fim), a jornada é criada na mesma transação: sessão concluída,
+`protocol_completed`, jornada e `journey_created` são gravados juntos, ou nada é gravado.
+
 Regras de resposta (o cliente sempre diz qual pergunta está respondendo):
 
 | Situação                                         | Resultado                                           |
@@ -29,7 +32,8 @@ from app.core.errors import (
     UnexpectedQuestionError,
 )
 from app.core.ids import new_id
-from app.models.events import ProtocolCompleted, ProtocolStarted
+from app.models.events import JourneyCreated, ProtocolCompleted, ProtocolStarted
+from app.models.journey import Journey, JourneyStatus, Task, TaskStatus
 from app.models.protocol import (
     Answer,
     Completed,
@@ -49,6 +53,7 @@ class SessionState:
     session: ProtocolSession
     template: ProtocolTemplate
     next_question: NextQuestion | None  # None quando a sessão está concluída
+    journey: Journey | None = None  # criada quando a sessão conclui
 
 
 class ProtocolService:
@@ -133,12 +138,39 @@ class ProtocolService:
                 ended_by_skip=result.ended_by_skip,
             ),
         )
+        self._create_journey(uow, session, now)
+
+    def _create_journey(self, uow: UnitOfWork, session: ProtocolSession, now: datetime) -> None:
+        """Objetivo anotado no início da sessão; tarefas placeholder do catálogo (a escolha real das tarefas é
+        responsabilidade do agente conversacional, fora do journey-core)."""
+        journey = Journey(
+            journey_id=new_id(),
+            patient_id=session.patient_id,
+            session_id=session.session_id,
+            objetivo=session.objetivo,
+            status=JourneyStatus.IN_PROGRESS,
+            created_at=now,
+            completed_at=None,
+            tasks=tuple(
+                Task(
+                    task_id=new_id(), position=position, titulo=titulo, status=TaskStatus.IN_PROGRESS, completed_at=None
+                )
+                for position, titulo in enumerate(self._catalog.journey_tasks, start=1)
+            ),
+        )
+        uow.journeys.add(journey)
+        self._event_store.append(
+            uow,
+            session.patient_id,
+            JourneyCreated(journey_id=journey.journey_id, session_id=session.session_id, task_count=len(journey.tasks)),
+        )
 
     def _state(self, uow: UnitOfWork, session: ProtocolSession, template: ProtocolTemplate) -> SessionState:
         progress = template.evaluate(session.answer_values)
         in_progress = session.status is SessionStatus.IN_PROGRESS
         next_question = progress if in_progress and isinstance(progress, NextQuestion) else None
-        return SessionState(session=session, template=template, next_question=next_question)
+        journey = None if in_progress else uow.journeys.get_by_session(session.session_id)
+        return SessionState(session=session, template=template, next_question=next_question, journey=journey)
 
     def _template(self, template_id: str) -> ProtocolTemplate:
         template = self._catalog.get(template_id)
