@@ -25,19 +25,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base, UTCDateTime, sql_in
-
-# Valores aceitos pelos CHECKs.
-SEXES = ("F", "M", "O")
-EVENT_NAMES = (
-    "patient_created",
-    "terms_accepted",
-    "protocol_started",
-    "protocol_completed",
-    "journey_created",
-    "task_completed",
-    "followup_eligible",
-    "followup_skipped",
-)
+from app.models.events import EventName
+from app.models.patient import Sex
 
 
 def init_db(engine: Engine) -> None:
@@ -64,7 +53,7 @@ class PatientRow(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime)
 
     __table_args__ = (
-        CheckConstraint(sql_in("sex", SEXES), name="sex"),
+        CheckConstraint(sql_in("sex", Sex), name="sex"),
         CheckConstraint("(terms_accepted = 1) = (terms_accepted_at IS NOT NULL)", name="terms_date"),
     )
 
@@ -176,7 +165,7 @@ class EventRow(Base):
     properties: Mapped[dict[str, Any]] = mapped_column(JSON)
 
     __table_args__ = (
-        CheckConstraint(sql_in("event_name", EVENT_NAMES), name="event_name"),
+        CheckConstraint(sql_in("event_name", EventName), name="event_name"),
         CheckConstraint("json_valid(properties)", name="properties_json"),
         Index(None, "patient_id_hash", "event_name", "occurred_at"),
     )
