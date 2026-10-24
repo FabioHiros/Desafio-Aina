@@ -15,6 +15,15 @@ from tests.conftest import PATIENT_PAYLOAD, PHONE_DIGITS, PII_VALUES
 from tests.fakes import FakeClock
 
 
+def stored_events(settings: Settings) -> str:
+    """A tabela events lida direto do banco, sem passar pela API."""
+    engine = create_engine(settings.database_url)
+    with engine.connect() as connection:
+        rows = connection.execute(text("SELECT * FROM events")).fetchall()
+    engine.dispose()
+    return repr(rows)
+
+
 def test_events_never_contain_pii(client: TestClient) -> None:
     patient_id = client.post("/patients", json={**PATIENT_PAYLOAD, "terms_accepted": False}).json()["patient_id"]
     client.post(f"/patients/{patient_id}/terms")
@@ -27,13 +36,8 @@ def test_events_never_contain_pii(client: TestClient) -> None:
 
 def test_persisted_events_never_contain_pii(client: TestClient, patient_id: str, settings: Settings) -> None:
     """Além da resposta da API: lê a tabela events direto do banco."""
-    engine = create_engine(settings.database_url)
-    with engine.connect() as connection:
-        rows = connection.execute(text("SELECT * FROM events")).fetchall()
-    engine.dispose()
-
-    dumped = repr(rows)
-    assert rows
+    dumped = stored_events(settings)
+    assert dumped != "[]"
     for value in PII_VALUES:
         assert value not in dumped
 
@@ -94,11 +98,7 @@ def test_objective_never_reaches_the_event_trail(client: TestClient, patient_id:
     assert "journey_created" in trail
     assert objetivo not in trail
 
-    engine = create_engine(settings.database_url)
-    with engine.connect() as connection:
-        stored = repr(connection.execute(text("SELECT properties FROM events")).fetchall())
-    engine.dispose()
-    assert objetivo not in stored
+    assert objetivo not in stored_events(settings)
 
 
 def test_full_journey_trail_never_contains_pii(
@@ -143,10 +143,7 @@ def test_full_journey_trail_never_contains_pii(
     trail = events.text
     assert {event["event_name"] for event in events.json()} == set(EventName)
 
-    engine = create_engine(settings.database_url)
-    with engine.connect() as connection:
-        stored = repr(connection.execute(text("SELECT * FROM events")).fetchall())
-    engine.dispose()
+    stored = stored_events(settings)
 
     # caplog.text inclui tracebacks e não passa pela máscara do JsonFormatter: é a checagem mais estrita.
     logged = caplog.text
