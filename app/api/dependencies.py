@@ -12,10 +12,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.clock import Clock
 from app.core.security import Hasher
-from app.repositories.interfaces import UnitOfWork
+from app.repositories.interfaces import TemplateCatalog, UnitOfWork
 from app.repositories.unit_of_work import SqlAlchemyUnitOfWork
 from app.services.event_store import EventService, EventStore
 from app.services.patient import PatientService
+from app.services.protocol import ProtocolService
 
 
 def get_session_factory(request: Request) -> sessionmaker[Session]:
@@ -33,9 +34,15 @@ def get_hasher(request: Request) -> Hasher:
     return hasher
 
 
+def get_catalog(request: Request) -> TemplateCatalog:
+    catalog: TemplateCatalog = request.app.state.catalog
+    return catalog
+
+
 SessionFactoryDep = Annotated[sessionmaker[Session], Depends(get_session_factory)]
 ClockDep = Annotated[Clock, Depends(get_clock)]
 HasherDep = Annotated[Hasher, Depends(get_hasher)]
+CatalogDep = Annotated[TemplateCatalog, Depends(get_catalog)]
 
 
 def get_uow(session_factory: SessionFactoryDep) -> UnitOfWork:
@@ -60,5 +67,12 @@ def get_event_service(uow: UnitOfWorkDep, event_store: EventStoreDep) -> EventSe
     return EventService(uow, event_store)
 
 
+def get_protocol_service(
+    uow: UnitOfWorkDep, event_store: EventStoreDep, catalog: CatalogDep, clock: ClockDep
+) -> ProtocolService:
+    return ProtocolService(uow, event_store, catalog, clock)
+
+
 PatientServiceDep = Annotated[PatientService, Depends(get_patient_service)]
+ProtocolServiceDep = Annotated[ProtocolService, Depends(get_protocol_service)]
 EventServiceDep = Annotated[EventService, Depends(get_event_service)]

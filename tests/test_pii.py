@@ -77,3 +77,23 @@ def test_unexpected_error_returns_generic_500_without_pii(settings: Settings, cl
 
     assert response.status_code == 500
     assert response.json() == {"error": {"code": "internal_error", "message": "Erro interno."}}
+
+
+def test_objective_never_reaches_the_event_trail(client: TestClient, patient_id: str, settings: Settings) -> None:
+    """O objetivo é texto livre e pode conter dado de saúde: fica na sessão e na jornada, nunca nos eventos."""
+    objetivo = "Controlar a ansiedade depois do diagnóstico"
+    session_id = client.post(
+        f"/patients/{patient_id}/protocols", json={"template_id": "phq9", "objetivo": objetivo}
+    ).json()["session_id"]
+    for question_id in ("q1", "q2"):
+        client.post(f"/protocol-sessions/{session_id}/answers", json={"question_id": question_id, "value": 0})
+
+    trail = client.get("/events", params={"patient_id": patient_id}).text
+    assert "journey_created" in trail
+    assert objetivo not in trail
+
+    engine = create_engine(settings.database_url)
+    with engine.connect() as connection:
+        stored = repr(connection.execute(text("SELECT properties FROM events")).fetchall())
+    engine.dispose()
+    assert objetivo not in stored
