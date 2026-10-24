@@ -1,31 +1,33 @@
-"""Modelos de persistência (SQLAlchemy). Fonte única do schema, criado por `init_db()`.
+"""Schema completo do banco (SQLAlchemy). Fonte única: `init_db()` cria tudo a partir daqui.
 
-O que o ORM não expressa (triggers append-only de `events`) é anexado como DDL ao criar a tabela.
+Regras críticas também são garantidas pelo banco (segunda linha de defesa, além dos services):
+eventos imutáveis (triggers), jornada só a partir de protocolo (session_id único e obrigatório),
+uma jornada ativa por paciente (índice único parcial), sem resposta duplicada (PK composta).
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    DDL,
     JSON,
     Boolean,
-    DDL,
     CheckConstraint,
-    DateTime,
-    Dialect,
+    Engine,
     ForeignKey,
     Index,
     Integer,
-    MetaData,
     String,
-    Text,
-    TypeDecorator,
     UniqueConstraint,
     event,
     text,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.database import Base, UTCDateTime, sql_in
+
+# Valores aceitos pelos CHECKs.
+SEXES = ("F", "M", "O")
 EVENT_NAMES = (
     "patient_created",
     "terms_accepted",
@@ -38,46 +40,17 @@ EVENT_NAMES = (
 )
 
 
-class UTCDateTime(TypeDecorator[datetime]):
-    """Grava sempre em UTC e devolve datetime com timezone.
-
-    O SQLite não guarda fuso; sem isso, datas voltariam "naive" e a comparação do cooldown ficaria ambígua.
-    """
-
-    impl = DateTime
-    cache_ok = True
-
-    def process_bind_param(self, value: datetime | None, dialect: Dialect) -> datetime | None:
-        if value is None:
-            return None
-        if value.tzinfo is None:
-            raise ValueError("datetime sem timezone; use o relógio da aplicação (UTC)")
-        return value.astimezone(UTC).replace(tzinfo=None)
-
-    def process_result_value(self, value: datetime | None, dialect: Dialect) -> datetime | None:
-        return value.replace(tzinfo=UTC) if value is not None else None
-
-
-def _in(column: str, values: tuple[str, ...]) -> str:
-    return f"{column} IN ({', '.join(repr(v) for v in values)})"
-
-
-class Base(DeclarativeBase):
-    # Nomes de constraints determinísticos: aparecem nas mensagens de erro e facilitam migrations futuras.
-    metadata = MetaData(
-        naming_convention={
-            "ix": "ix_%(table_name)s_%(column_0_N_name)s",
-            "uq": "uq_%(table_name)s_%(column_0_N_name)s",
-            "ck": "ck_%(table_name)s_%(constraint_name)s",
-            "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
-            "pk": "pk_%(table_name)s",
-        }
-    )
+def init_db(engine: Engine) -> None:
+    """Cria tabelas, índices e triggers que ainda não existem. Seguro rodar a cada inicialização."""
+    Base.metadata.create_all(engine)
 
 
 # ─────────────── Pacientes ───────────────
-# Cadastro operacional: único lugar onde telefone, nome e data de nascimento existem.
+
+
 class PatientRow(Base):
+    """Cadastro operacional: único lugar onde telefone, nome e data de nascimento existem."""
+
     __tablename__ = "patients"
 
     patient_id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -91,15 +64,20 @@ class PatientRow(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime)
 
     __table_args__ = (
-        CheckConstraint(_in("sex", ("F", "M", "O")), name="sex"),
+        CheckConstraint(sql_in("sex", SEXES), name="sex"),
         CheckConstraint("(terms_accepted = 1) = (terms_accepted_at IS NOT NULL)", name="terms_date"),
     )
 
 
 # ─────────────── Protocolo ───────────────
-# As perguntas vivem em templates/*.json; aqui só o estado da sessão e as respostas.
-# objetivo é anotado ao iniciar a sessão e copiado para a jornada quando o protocolo conclui.
+
+
 class ProtocolSessionRow(Base):
+    """Estado da sessão. As perguntas vivem em templates/*.json, não no banco.
+
+    objetivo é anotado ao iniciar a sessão e copiado para a jornada quando o protocolo conclui.
+    """
+
     __tablename__ = "protocol_sessions"
 
     session_id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -116,7 +94,7 @@ class ProtocolSessionRow(Base):
 
     __table_args__ = (
         CheckConstraint("length(objetivo) BETWEEN 1 AND 500", name="objetivo_length"),
-        CheckConstraint(_in("status", ("em_andamento", "concluido")), name="status"),
+        CheckConstraint(sql_in("status", ("em_andamento", "concluido")), name="status"),
         CheckConstraint(
             "(status = 'concluido') = (completed_at IS NOT NULL AND score IS NOT NULL)", name="completed_state"
         ),
@@ -136,8 +114,11 @@ class ProtocolAnswerRow(Base):
 
 
 # ─────────────── Jornada ───────────────
-# Criada automaticamente quando o protocolo conclui: objetivo vem da sessão, tarefas de templates/journey_tasks.json.
+
+
 class JourneyRow(Base):
+    """Criada automaticamente quando o protocolo conclui: objetivo vem da sessão, tarefas do template."""
+
     __tablename__ = "journeys"
 
     journey_id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -152,15 +133,10 @@ class JourneyRow(Base):
 
     __table_args__ = (
         CheckConstraint("length(objetivo) BETWEEN 1 AND 500", name="objetivo_length"),
-        CheckConstraint(_in("status", ("em_andamento", "concluida")), name="status"),
+        CheckConstraint(sql_in("status", ("em_andamento", "concluida")), name="status"),
         CheckConstraint("(status = 'concluida') = (completed_at IS NOT NULL)", name="completed_state"),
         # No máximo uma jornada em andamento por paciente.
-        Index(
-            "ux_journeys_one_active",
-            "patient_id",
-            unique=True,
-            sqlite_where=text("status = 'em_andamento'"),
-        ),
+        Index("ux_journeys_one_active", "patient_id", unique=True, sqlite_where=text("status = 'em_andamento'")),
     )
 
 
@@ -177,15 +153,20 @@ class JourneyTaskRow(Base):
     __table_args__ = (
         UniqueConstraint("journey_id", "position"),
         CheckConstraint("length(titulo) BETWEEN 1 AND 200", name="titulo_length"),
-        CheckConstraint(_in("status", ("em_andamento", "concluida")), name="status"),
+        CheckConstraint(sql_in("status", ("em_andamento", "concluida")), name="status"),
         CheckConstraint("(status = 'concluida') = (completed_at IS NOT NULL)", name="completed_state"),
     )
 
 
 # ─────────────── Event store (append-only) ───────────────
-# Sem FK para patients: a trilha é exportável e só se liga ao paciente pelo hash.
-# UPDATE/DELETE são bloqueados pelos triggers definidos logo abaixo da classe.
+
+
 class EventRow(Base):
+    """Trilha append-only. Sem FK para patients: é exportável e só se liga ao paciente pelo hash.
+
+    UPDATE/DELETE são bloqueados pelos triggers definidos abaixo da classe.
+    """
+
     __tablename__ = "events"
 
     event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -195,16 +176,14 @@ class EventRow(Base):
     properties: Mapped[dict[str, Any]] = mapped_column(JSON)
 
     __table_args__ = (
-        CheckConstraint(_in("event_name", EVENT_NAMES), name="event_name"),
+        CheckConstraint(sql_in("event_name", EVENT_NAMES), name="event_name"),
         CheckConstraint("json_valid(properties)", name="properties_json"),
         Index(None, "patient_id_hash", "event_name", "occurred_at"),
     )
 
 
 for _trigger in (
-    "CREATE TRIGGER events_no_update BEFORE UPDATE ON events "
-    "BEGIN SELECT RAISE(ABORT, 'events are append-only'); END",
-    "CREATE TRIGGER events_no_delete BEFORE DELETE ON events "
-    "BEGIN SELECT RAISE(ABORT, 'events are append-only'); END",
+    "CREATE TRIGGER events_no_update BEFORE UPDATE ON events BEGIN SELECT RAISE(ABORT, 'events are append-only'); END",
+    "CREATE TRIGGER events_no_delete BEFORE DELETE ON events BEGIN SELECT RAISE(ABORT, 'events are append-only'); END",
 ):
-    event.listen(EventRow.__table__, "after_create", DDL(_trigger))
+    event.listen(EventRow.__table__, "after_create", DDL(_trigger))  # type: ignore[no-untyped-call]

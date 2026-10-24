@@ -5,7 +5,10 @@ import pytest
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.repositories.database import create_db_engine, create_session_factory, init_db
+from app.core.database import create_db_engine, create_session_factory
+from app.repositories.tables import init_db
+
+# ─────────────── Banco ───────────────
 
 
 @pytest.fixture

@@ -8,13 +8,13 @@ from sqlalchemy import Engine, delete, func, select, text, update
 from sqlalchemy.exc import IntegrityError, StatementError
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.repositories.database import init_db
-from app.repositories.orm import (
+from app.repositories.tables import (
     EventRow,
     JourneyRow,
     PatientRow,
     ProtocolAnswerRow,
     ProtocolSessionRow,
+    init_db,
 )
 
 NOW = datetime(2026, 10, 24, 12, 0, tzinfo=UTC)
@@ -105,7 +105,10 @@ def test_unknown_event_name_is_rejected(session: Session) -> None:
 def test_event_properties_must_be_json(session: Session) -> None:
     with pytest.raises(IntegrityError):
         session.execute(
-            text("INSERT INTO events VALUES ('e-1', :now, 'patient_created', 'hash', 'not json')"),
+            text(
+                "INSERT INTO events (event_id, occurred_at, event_name, patient_id_hash, properties) "
+                "VALUES ('e-1', :now, 'patient_created', 'hash', 'not json')"
+            ),
             {"now": NOW_DB},
         )
 
@@ -181,10 +184,14 @@ def test_only_one_active_journey_per_patient(session: Session) -> None:
 
 
 def test_transaction_rolls_back_everything_on_error(session_factory: sessionmaker[Session]) -> None:
-    with pytest.raises(RuntimeError), session_factory.begin() as session:
-        session.add_all([patient(), event()])
-        session.flush()
-        raise RuntimeError("falha no meio da operação")
+    def failing_operation() -> None:
+        with session_factory.begin() as session:
+            session.add_all([patient(), event()])
+            session.flush()
+            raise RuntimeError("falha no meio da operação")
+
+    with pytest.raises(RuntimeError):
+        failing_operation()
 
     with session_factory() as session:
         assert session.scalar(select(func.count()).select_from(PatientRow)) == 0
