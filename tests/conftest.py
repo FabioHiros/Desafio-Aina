@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.database import create_db_engine, create_session_factory
 from app.repositories.tables import init_db
+from tests.fakes import FakeClock
 
 # ─────────────── Banco ───────────────
 
@@ -23,3 +24,8 @@ def engine(tmp_path: Path) -> Iterator[Engine]:
 @pytest.fixture
 def session_factory(engine: Engine) -> sessionmaker[Session]:
     return create_session_factory(engine)
+
+
+@pytest.fixture
+def clock() -> FakeClock:
+    return FakeClock()
