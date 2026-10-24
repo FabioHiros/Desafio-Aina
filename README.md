@@ -22,7 +22,7 @@ Antes de qualquer linha de código, estas são as regras que o revisor vai checa
 | 7 | **Protocolo data-driven.** Perguntas só no JSON; nada de `if template_id == ...`. | Interpretador genérico de regras de skip. |
 | 8 | **Skip PHQ-2 exato:** após item 2, se `item1 + item2 < 3` → `end_block`, concluído, `ended_by_skip=true`, score = soma parcial. | Sem fórmulas clínicas inventadas, só a soma. |
 | 9 | **Jornada só nasce após protocolo concluído.** | A jornada é criada automaticamente na mesma transação que conclui o protocolo; não existe endpoint para criá-la. No banco, `journeys.session_id` é obrigatório e único. |
-| 10 | **Elegibilidade declarativa + cooldown de 72h.** | Regras em JSON; relógio injetável para testar o tempo. |
+| 10 | **Elegibilidade declarativa + cooldown de 72h.** | Regras em `rules/followup.json`, validadas na inicialização; motivos de recusa tipados; relógio injetável para testar o tempo; avaliações simultâneas serializadas (nunca dois follow-ups). |
 | 11 | **Sem segredos ou dados reais no repositório.** | `.env.example` com valores fictícios; `.env` e `*.db` no `.gitignore`. |
 | 12 | **Testes rodam localmente sem credenciais de nuvem.** | `pytest` puro; cada teste usa um banco SQLite temporário e isolado. |
 
@@ -55,6 +55,8 @@ Documentação interativa: `http://localhost:8000/docs`
 | `EVENT_HASH_SALT` | sim | Chave do HMAC-SHA256 do `patient_id_hash` (mín. 16). **Precisa ser diferente** do salt do telefone; a aplicação recusa subir se forem iguais. |
 | `DATABASE_URL` | não | URL SQLAlchemy do banco. Padrão: `sqlite:///journey_core.db`. O schema é criado na inicialização. |
 | `LOG_LEVEL` | não | Padrão: `INFO`. |
+| `TEMPLATES_DIR` | não | Diretório dos templates. Padrão: `templates/` do projeto. |
+| `FOLLOWUP_RULES_PATH` | não | Arquivo de regras de follow-up. Padrão: `rules/followup.json` do projeto. |
 
 ---
 
@@ -85,7 +87,7 @@ journey-core/
 ├── app/
 │   ├── main.py                    # create_app(): monta dependências, rotas e handlers
 │   ├── core/
-│   │   ├── config.py              # settings validados (salts e banco via env)
+│   │   ├── config.py              # settings validados (salts, banco, templates e regras via env)
 │   │   ├── database.py            # engine, sessões, Base ORM, UTCDateTime
 │   │   ├── security.py            # Hasher: HMAC-SHA256 do telefone e do patient_id
 │   │   ├── clock.py               # Clock (interface) + SystemClock
@@ -96,11 +98,13 @@ journey-core/
 │   │   ├── patient.py             # Patient, NewPatient, Sex
 │   │   ├── protocol.py            # ProtocolTemplate + motor genérico de skip; ProtocolSession, Answer
 │   │   ├── journey.py             # Journey, Task
+│   │   ├── followup.py            # regras de elegibilidade (puras), motivos tipados, Eligible | Skipped
 │   │   └── events.py              # EventName, Event, DomainEvent + os 8 eventos (allow-list)
 │   ├── schemas/
 │   │   ├── patient.py             # PatientCreate (normaliza telefone), PatientOut (sem PII)
 │   │   ├── protocol.py            # ProtocolStart, AnswerIn (inteiro estrito), ProtocolSessionOut
 │   │   ├── journey.py             # JourneyOut, TaskUpdate
+│   │   ├── followup.py            # FollowupEvaluate, FollowupDecisionOut
 │   │   ├── event.py               # EventOut
 │   │   └── common.py              # ErrorResponse, HealthOut
 │   ├── repositories/
@@ -110,23 +114,25 @@ journey-core/
 │   │   ├── protocol_session.py    # SqlAlchemyProtocolSessionRepository
 │   │   ├── journey.py             # SqlAlchemyJourneyRepository (uma linha por tarefa)
 │   │   ├── templates.py           # FileTemplateCatalog: lê e valida templates/ na inicialização
+│   │   ├── rules.py               # lê e valida rules/followup.json na inicialização
 │   │   ├── unit_of_work.py        # SqlAlchemyUnitOfWork: uma sessão por `with`, commit explícito
 │   │   └── tables.py              # schema completo (todas as tabelas, constraints, triggers) + init_db()
 │   ├── services/
 │   │   ├── patient.py             # PatientService: cadastro, consulta, aceite dos termos
 │   │   ├── protocol.py            # ProtocolService: início, respostas idempotentes, conclusão + jornada
 │   │   ├── journey.py             # JourneyService: consulta e conclusão de tarefas
+│   │   ├── followup.py            # FollowupService: fatos → regras → evento, numa transação
 │   │   └── event_store.py         # EventStore: única porta da trilha, calcula o hash, bloqueia PII
 │   └── api/
-│       ├── routes/                # health, patients, protocols, journeys, events
+│       ├── routes/                # health, patients, protocols, journeys, followups, events
 │       ├── dependencies.py        # injeção de dependência: escolhe as implementações das interfaces
 │       ├── errors.py              # erro → HTTP, formato padrão, sem eco de input
 │       └── middleware.py          # request_id + log de requisição
 ├── templates/
 │   ├── protocols/phq9.json        # perguntas, escala e regras de skip (dados, não código)
 │   └── journey_tasks.json         # tarefas placeholder da jornada
-├── rules/followup.json            # regras de elegibilidade (dados, não código)
-└── tests/                         # um arquivo por assunto; fakes.py tem as implementações em memória
+├── rules/followup.json            # regras de elegibilidade, em ordem, com o cooldown (dados, não código)
+└── tests/                         # um arquivo por assunto; fakes.py (em memória), concurrency.py (threads)
 ```
 
 ### Padrões
@@ -359,7 +365,7 @@ event_id · occurred_at · event_name · patient_id_hash · properties
 `GET /events?patient_id=...` recebe o id interno (conforme o enunciado), calcula o hash e filtra por ele. É um endpoint operacional/interno: em produção ficaria atrás de autenticação entre serviços (fora do escopo). A resposta traz o envelope como persistido, sem `patient_id` nem PII. Id com formato inválido → 422; id sem eventos → lista vazia (não confirmamos se um id existe).
 
 ### Elegibilidade de follow-up
-Regras declarativas avaliadas em ordem; a primeira que falha define o `reason`:
+`POST /followups/evaluate` com `{"patient_id": "..."}` aplica as regras declarativas de `rules/followup.json`, **em ordem**; a primeira que falha define o motivo:
 
 ```json
 {
@@ -369,16 +375,22 @@ Regras declarativas avaliadas em ordem; a primeira que falha define o `reason`:
     { "check": "protocol_completed", "reason": "no_completed_protocol", "description": "Ao menos um protocolo concluído" },
     { "check": "journey_active", "reason": "no_active_journey", "description": "Jornada em andamento" },
     { "check": "has_active_task", "reason": "no_active_task", "description": "Ao menos uma tarefa em andamento" },
-    { "check": "cooldown", "reason": "cooldown", "params": { "hours": 72 }, "description": "No máximo um follow-up a cada 72h" }
+    { "check": "cooldown", "reason": "cooldown", "params": { "hours": 72 }, "description": "No máximo um follow-up elegível a cada 72h" }
   ]
 }
 ```
 
-- Cada `check` aponta para uma função em um registry no código; `description` documenta a regra no próprio arquivo (JSON não aceita comentários).
-- O arquivo é validado com Pydantic ao carregar; `check` desconhecido falha na inicialização, não em runtime.
-- O cooldown consulta o event store (`followup_eligible` do mesmo `patient_id_hash` depois de `agora - 72h`), com `agora` vindo do relógio injetável.
-- Elegível → `followup_eligible` com `template_key`.
-- Não elegível → `followup_skipped` com `reason`.
+| Resposta (sempre 200) | Evento gravado |
+|---|---|
+| `{"eligible": true, "template_key": "checkin_adesao", "reason": null}` | `followup_eligible` com `template_key` |
+| `{"eligible": false, "template_key": null, "reason": "cooldown"}` | `followup_skipped` com `reason` |
+
+- **Declarativo, mas fechado:** cada `check` aponta para uma verificação conhecida pelo código, e `reason` só aceita os motivos tipados (`missing_consent`, `no_completed_protocol`, `no_active_journey`, `no_active_task`, `cooldown`). Mudar a ordem, remover uma regra ou alterar a janela do cooldown é editar o JSON; um `check` ou `reason` desconhecido impede a aplicação de subir.
+- **Avaliação pura:** o service lê numa transação um retrato dos fatos (consentimento, protocolo concluído, jornada atual, último `followup_eligible`) e as regras decidem sem acessar o banco (`models/followup.py`), o que deixa cada regra testável isoladamente.
+- **Cooldown:** conta a partir do último `followup_eligible` do paciente (pelo `patient_id_hash`), não da última avaliação; avaliações recusadas não reiniciam a janela. Exatamente 72h depois, já é elegível.
+- **Concorrência:** decisão e evento são gravados na mesma transação, e `BEGIN IMMEDIATE` serializa avaliações simultâneas. 10 avaliações ao mesmo tempo resultam em 1 elegível e 9 `cooldown`; sem `BEGIN IMMEDIATE`, o teste falhou em 3 de 5 execuções (mais de um elegível, ou seja, mensagens duplicadas para o paciente).
+- **`no_active_task` e conclusão automática:** como a jornada é concluída junto com a última tarefa, uma jornada sem tarefas em andamento já não está em andamento, e a regra anterior (`no_active_journey`) responde primeiro. A regra `has_active_task` continua no arquivo, como pede o enunciado, e protege o caso caso a regra de conclusão automática mude; é testada isoladamente.
+- **Sob demanda:** a avaliação roda quando `POST /followups/evaluate` é chamado. Disparo automático ao concluir tarefa (permitido pelo enunciado) ficou como evolução.
 - Nenhuma mensagem é enviada; só a decisão e o evento.
 
 ---
@@ -395,7 +407,7 @@ Regras declarativas avaliadas em ordem; a primeira que falha define o `reason`:
 | `GET` | `/protocol-sessions/{id}` | Estado atual da sessão (retomar após falha) |
 | `GET` | `/patients/{id}/journey` | Jornada em andamento (ou a mais recente) |
 | `PATCH` | `/journeys/{id}/tasks/{task_id}` | `{"status": "concluida"}`: conclui a tarefa |
-| `POST` | `/followups/evaluate` | Avalia elegibilidade de follow-up *(dia 3)* |
+| `POST` | `/followups/evaluate` | `{patient_id}`; devolve `{eligible, template_key, reason}` e grava o evento |
 | `GET` | `/events?patient_id=...` | Trilha de eventos do paciente (por id interno) |
 | `GET` | `/health` | Verifica o banco |
 
@@ -408,7 +420,7 @@ Obrigatórios:
 - [x] Sem skip: `q1+q2 ≥ 3` segue até a 9ª pergunta.
 - [x] Recusa sem termos: iniciar protocolo sem consentimento → 403 `missing_consent`.
 - [x] PII ausente: nenhum evento (na API e direto na tabela) contém telefone, nome ou data de nascimento (`tests/test_pii.py`).
-- [ ] Cooldown 72h: 1ª avaliação elegível, 2ª `cooldown`, após +73h elegível de novo.
+- [x] Cooldown 72h: 1ª avaliação elegível, 2ª `cooldown`, 71h59 depois ainda `cooldown`, exatamente 72h depois elegível de novo (`tests/test_followups_api.py`, `tests/test_followup_service.py`).
 - [x] Jornada só após protocolo: 404 antes e durante a sessão; existe logo após a resposta que conclui o protocolo (`tests/test_journeys_api.py`).
 
 Extras:
@@ -417,6 +429,8 @@ Extras:
 - [x] Respostas e inícios simultâneos (`tests/test_protocol_concurrency.py`): mesma resposta enviada 10 vezes ao mesmo tempo é gravada uma vez e todas recebem 200; uma jornada e uma sessão por paciente.
 - [x] Jornada criada na mesma transação da conclusão: falha na jornada desfaz a conclusão (`tests/test_protocol_service.py`).
 - [x] Tarefas: concluir emite `task_completed`, é idempotente, e a última conclui a jornada.
+- [x] Follow-up: cada motivo de recusa a partir do fluxo real, primeira regra que falha define o motivo, ordem e janela configuráveis, regras inválidas impedem a aplicação de subir (`tests/test_followup_rules.py`, `tests/test_followup_rules_file.py`).
+- [x] Follow-up simultâneo: 10 avaliações ao mesmo tempo → 1 elegível e 9 `cooldown` (`tests/test_protocol_concurrency.py`).
 - [x] Erro de validação (422) não ecoa o telefone; 409 e 500 também não; logs sem PII (`tests/test_pii.py`).
 - [x] Objetivo não aparece em nenhum evento (API e tabela).
 - [x] Iniciar protocolo com sessão ou jornada em andamento → 409.
@@ -451,18 +465,32 @@ Extras:
    curl -s $API/patients/$PATIENT/journey
    ```
    Para ver o fluxo sem skip, responda `q1` e `q2` com valores que somem 3 ou mais e siga a `next_question` até a 9ª.
-3. Avaliar follow-up duas vezes → observar `cooldown` na segunda.
-4. `GET /events?patient_id=...` → confirmar ausência de PII.
+3. Avaliar follow-up duas vezes → observar `cooldown` na segunda:
+   ```bash
+   curl -s -X POST $API/followups/evaluate -H 'content-type: application/json' -d "{\"patient_id\":\"$PATIENT\"}"
+   # → {"eligible":true,"template_key":"checkin_adesao","reason":null}
+   curl -s -X POST $API/followups/evaluate -H 'content-type: application/json' -d "{\"patient_id\":\"$PATIENT\"}"
+   # → {"eligible":false,"template_key":null,"reason":"cooldown"}
+   ```
+   (A passagem das 72h é coberta pelos testes com relógio injetável: `tests/test_followups_api.py::test_cooldown_72h`.)
+4. Conferir a trilha e a ausência de PII:
+   ```bash
+   curl -s "$API/events?patient_id=$PATIENT"
+   # patient_created → terms_accepted → protocol_started → protocol_completed → journey_created
+   # → followup_eligible → followup_skipped; só patient_id_hash, nenhum telefone, nome, data de nascimento ou objetivo
+   ```
 
 ---
 
 ## Plano de execução (3 dias)
 
-| Dia | Foco | Resultado visível |
-|---|---|---|
-| 1 | Schema, paciente/consentimento, event store, testes de PII | Cadastro + trilha de eventos sem telefone |
-| 2 | Motor de protocolo, skip logic, jornada | PHQ-9 via JSON; skip testado |
-| 3 | Elegibilidade, cooldown, README, polimento | Regras declarativas e casos de borda |
+| Dia | Foco | Resultado | Status |
+|---|---|---|---|
+| 1 | Schema, paciente/consentimento, event store, testes de PII | Cadastro + trilha de eventos sem telefone | ✅ |
+| 2 | Motor de protocolo, skip logic, jornada | PHQ-9 via JSON; skip testado; respostas idempotentes | ✅ |
+| 3 | Elegibilidade, cooldown, README, polimento | Regras declarativas, cooldown testado, roteiro de revisão | ✅ |
+
+O histórico do Git segue o mesmo plano: um commit por assunto, cada um com seus testes, todos passando em `ruff`, `mypy` e `pytest`.
 
 ---
 
@@ -478,9 +506,7 @@ Extras:
 
 ## Decisões de desenho
 
-> _Preencher durante a implementação: o que foi decidido e por quê._
-
-- **Erros de domínio desacoplados de HTTP:** services lançam `AppError`; só `exceptions/handlers.py` conhece status codes. Facilita testar services sem FastAPI e garante um formato único de erro.
+- **Erros de domínio desacoplados de HTTP:** services lançam `AppError`; só `api/errors.py` conhece status codes. Facilita testar services sem FastAPI e garante um formato único de erro.
 - **SQLite em vez de dicts em memória:** os dados sobrevivem a reinícios (o revisor pode reiniciar a API no meio do roteiro), e regras críticas são garantidas também pelo banco (constraints e triggers). Continua sem credenciais de nuvem.
 - **SQLAlchemy em vez de SQL puro:** padrão de mercado, modelos tipados e trocar de banco (ex.: Postgres) vira mudança de `DATABASE_URL` + revisão das partes específicas do SQLite (triggers, índice parcial). A camada de repositório continua isolando a persistência caso o destino seja Firestore.
 - **Sem Alembic no escopo do desafio:** sem dados para migrar, `create_all` basta e mantém o setup do revisor em um passo a menos.
@@ -501,15 +527,32 @@ Extras:
 - **`GET /patients/{id}` sem PII:** útil para conferir o estado do consentimento; devolve só id, sexo, termos e datas (minimização).
 - **Guard de PII no event store:** a regra de "sem PII" é imposta por código, não só por convenção.
 - **Primeira regra que falha define o `reason`:** comportamento previsível e auditável.
+- **Regras de follow-up declarativas, mas fechadas:** o JSON escolhe quais verificações, em que ordem e com que janela; as verificações e os motivos possíveis são enums no código. Um arquivo com `check` ou `reason` desconhecido não sobe, em vez de produzir motivos que nenhum consumidor espera.
+- **Avaliação de follow-up pura:** fatos lidos numa transação, regras aplicadas sem banco. Cada regra é testada isoladamente, inclusive o limite exato das 72h.
+- **Decisão como `Eligible | Skipped`:** um elegível sempre tem `template_key` e um recusado sempre tem `reason`, garantido pelos tipos.
+- **"Não elegível" é 200, não erro:** a avaliação funcionou; o resultado é que não há follow-up. Erros (4xx) ficam para paciente inexistente ou payload inválido.
+- **Cooldown a partir do último elegível:** avaliações recusadas não reiniciam a janela; caso contrário, um agente que avalia com frequência nunca liberaria o follow-up.
 
 ## O que ficou de fora
 
-> _Preencher na entrega._
+- **Autenticação e autorização** (fora do escopo pelo enunciado). Os endpoints são internos, chamados pelo agente; quem conhece um `session_id` ou `journey_id` pode operá-lo. Os ids são UUIDs aleatórios, o que reduz o risco, mas não substitui autenticação.
+- **Disparo automático do follow-up ao concluir tarefa** (o enunciado aceita os dois). A avaliação é sob demanda; o disparo automático é a primeira evolução abaixo.
+- **Envio de mensagens:** só a decisão e o evento, como pedido.
+- **Correção de respostas:** respostas gravadas não mudam, por desenho (auditoria e score). Uma correção seria uma funcionalidade explícita, provavelmente uma nova sessão.
+- **Templates com mais de um bloco:** o motor tem um único bloco por template, e `end_block` conclui o protocolo. Suficiente para o PHQ-9/PHQ-2.
+- **Migrations versionadas:** o schema nasce com o banco (`create_all`); não há dados para migrar.
+- **Exclusão e retenção de dados (LGPD):** não há endpoint para apagar ou anonimizar um paciente.
+- **Paginação em `GET /events`**, rate limiting e Docker Compose.
+- **Integrações reais** (Firestore, BigQuery, WhatsApp, Vertex AI), fora do escopo pelo enunciado.
 
 ## O que eu faria no 4º dia
 
-> _Preencher na entrega._ Ideias:
-> - Migrations versionadas com Alembic (`render_as_batch` por causa do SQLite).
-> - Tabela de contatos com **consentimento por finalidade** (ex.: opt-in de marketing separado do consentimento de cuidado, exigido pela LGPD) e suporte a mais de um telefone por paciente.
-> - Arquivamento de jornadas concluídas se o volume de `journey_tasks` crescer.
-> - Repositório Firestore atrás da mesma interface, Docker Compose, mais templates (GAD-7), versionamento de templates e regras.
+Em ordem de prioridade:
+
+1. **Disparo automático do follow-up ao concluir tarefa**, com um *outbox* transacional: a decisão `followup_eligible` grava, na mesma transação, um item para o serviço de envio consumir. Garante que nenhum follow-up aprovado se perca e que nenhum seja enviado sem estar registrado.
+2. **Autenticação entre serviços** (API key ou mTLS) e um id de cliente por requisição nos logs.
+3. **LGPD:** anonimização do paciente (apagar telefone, nome e data de nascimento de `patients`, mantendo a trilha pseudonimizada), política de retenção, e uma tabela de contatos com **consentimento por finalidade** (ex.: opt-in de marketing separado do consentimento de cuidado).
+4. **Postgres em produção**, trocando `BEGIN IMMEDIATE` (lock global do SQLite) por lock da linha do paciente (`SELECT ... FOR UPDATE`), que serializa só operações do mesmo paciente; e **migrations com Alembic**.
+5. **Versionamento de templates e regras:** gravar na sessão a versão do template usada, para que mudar o JSON não altere a interpretação de sessões antigas; templates com múltiplos blocos; GAD-7.
+6. **Exportação da trilha** para analytics (BigQuery) via outbox, usando o `patient_id_hash` como chave pseudônima.
+7. **Operação:** Docker Compose, CI (GitHub Actions com `ruff`, `mypy` e `pytest`), métricas por endpoint e paginação de `GET /events`.
