@@ -65,9 +65,37 @@ class ConsentRequiredError(PermissionDeniedError):
 # ─────────────── Protocolo ───────────────
 
 
+class TemplateNotFoundError(NotFoundError):
+    code = "template_not_found"
+    message = "Template de protocolo não encontrado."
+
+
+class ProtocolSessionNotFoundError(NotFoundError):
+    code = "protocol_session_not_found"
+    message = "Sessão de protocolo não encontrada."
+
+
 class InvalidAnswerError(BusinessRuleViolationError):
     code = "invalid_answer"
-    message = "Resposta inválida para a pergunta atual."
+    message = "Valor fora da escala do protocolo."
+
+
+class UnexpectedQuestionError(ConflictError):
+    """Resposta para uma pergunta que não é a pendente (fora de ordem). A mensagem diz qual é a esperada."""
+
+    code = "unexpected_question"
+    message = "A pergunta respondida não é a pergunta atual."
+
+    def __init__(self, expected_question_id: str) -> None:
+        super().__init__(f"A pergunta respondida não é a pergunta atual. Esperada: {expected_question_id}.")
+        self.expected_question_id = expected_question_id
+
+
+class AnswerAlreadyRecordedError(ConflictError):
+    """Tentativa de mudar uma resposta já gravada. Reenvio idêntico não é erro: devolve a mesma resposta."""
+
+    code = "answer_already_recorded"
+    message = "Esta pergunta já foi respondida com outro valor."
 
 
 class SessionClosedError(ConflictError):
@@ -81,6 +109,16 @@ class ProtocolInProgressError(ConflictError):
 
 
 # ─────────────── Jornada ───────────────
+
+
+class JourneyNotFoundError(NotFoundError):
+    code = "journey_not_found"
+    message = "Jornada não encontrada."
+
+
+class TaskNotFoundError(NotFoundError):
+    code = "task_not_found"
+    message = "Tarefa não encontrada nesta jornada."
 
 
 class JourneyAlreadyActiveError(ConflictError):
