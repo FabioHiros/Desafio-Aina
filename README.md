@@ -58,6 +58,22 @@ Documentação interativa: `http://localhost:8000/docs`
 | `TEMPLATES_DIR` | não | Diretório dos templates. Padrão: `templates/` do projeto. |
 | `FOLLOWUP_RULES_PATH` | não | Arquivo de regras de follow-up. Padrão: `rules/followup.json` do projeto. |
 
+### Dependências
+
+Além da stack pedida (Python 3.12, FastAPI, pytest, uv, SQLite), cada biblioteca está aqui por um motivo:
+
+| Biblioteca | Grupo | Por quê |
+|---|---|---|
+| `fastapi` | runtime | Stack do enunciado. |
+| `pydantic` | runtime | Pedido pelo enunciado (v2): schemas da API, templates, regras de follow-up e allow-list das properties dos eventos. |
+| `pydantic-settings` | runtime | Lê e valida a configuração do ambiente/`.env` (salts com tamanho mínimo e diferentes entre si). A aplicação falha ao subir com configuração inválida, em vez de falhar no meio de uma requisição. |
+| `sqlalchemy` | runtime | ORM tipado sobre o SQLite: schema declarado em um lugar só, constraints e índices parciais, transações explícitas pela Unit of Work. Ver [Decisões de desenho](#decisões-de-desenho). |
+| `uvicorn` | runtime | Servidor ASGI para rodar o FastAPI. |
+| `pytest` | dev | Stack do enunciado. |
+| `httpx` | dev | Exigido pelo `TestClient` do FastAPI nos testes de API. |
+| `ruff` | dev | Lint e formatação em uma ferramenta (inclui regras de segurança `S`, ex.: proíbe `assert` no código da aplicação). |
+| `mypy` | dev | Checagem estática em modo `strict`, garantindo os type hints pedidos no enunciado. |
+
 ---
 
 ## Arquitetura
