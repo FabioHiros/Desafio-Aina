@@ -10,7 +10,8 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 
 def create_db_engine(database_url: str) -> Engine:
-    engine = create_engine(database_url)
+    # hide_parameters: mensagens de erro do SQLAlchemy incluiriam os valores do INSERT (ex.: o telefone).
+    engine = create_engine(database_url, hide_parameters=True)
     if engine.dialect.name == "sqlite":
         event.listen(engine, "connect", _enable_sqlite_foreign_keys)
     return engine
