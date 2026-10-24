@@ -22,6 +22,7 @@ class EventName(StrEnum):
     PROTOCOL_COMPLETED = "protocol_completed"
     JOURNEY_CREATED = "journey_created"
     TASK_COMPLETED = "task_completed"
+    JOURNEY_COMPLETED = "journey_completed"
     FOLLOWUP_ELIGIBLE = "followup_eligible"
     FOLLOWUP_SKIPPED = "followup_skipped"
 
@@ -92,6 +93,12 @@ class TaskCompleted(DomainEvent):
 
     journey_id: str
     task_id: str
+
+
+class JourneyCompleted(DomainEvent):
+    event_name = EventName.JOURNEY_COMPLETED
+
+    journey_id: str
 
 
 # ─────────────── Follow-up ───────────────

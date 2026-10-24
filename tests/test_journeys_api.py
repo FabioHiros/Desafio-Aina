@@ -79,12 +79,19 @@ def test_complete_task(client: TestClient, patient_id: str, journey: dict[str, A
     assert events[-1]["properties"] == {"journey_id": journey["journey_id"], "task_id": task_id}
 
 
-def test_completing_every_task_completes_the_journey(client: TestClient, journey: dict[str, Any]) -> None:
+def test_completing_every_task_completes_the_journey(
+    client: TestClient, patient_id: str, journey: dict[str, Any]
+) -> None:
     for task in journey["tarefas"]:
         response = complete(client, journey["journey_id"], task["id"])
+    complete(client, journey["journey_id"], journey["tarefas"][-1]["id"])
 
     assert response.json()["status"] == "concluida"
     assert response.json()["completed_at"] is not None
+    events = client.get("/events", params={"patient_id": patient_id}).json()
+    assert [e["event_name"] for e in events].count("journey_completed") == 1
+    assert events[-1]["event_name"] == "journey_completed"
+    assert events[-1]["properties"] == {"journey_id": journey["journey_id"]}
 
 
 def test_completing_twice_is_idempotent(client: TestClient, patient_id: str, journey: dict[str, Any]) -> None:

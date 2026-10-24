@@ -2,7 +2,7 @@
 
 from app.core.clock import Clock
 from app.core.errors import JourneyNotFoundError, PatientNotFoundError, TaskNotFoundError
-from app.models.events import TaskCompleted
+from app.models.events import JourneyCompleted, TaskCompleted
 from app.models.journey import Journey, TaskStatus
 from app.repositories.interfaces import UnitOfWork
 from app.services.event_store import EventStore
@@ -26,7 +26,7 @@ class JourneyService:
 
     def complete_task(self, journey_id: str, task_id: str) -> Journey:
         """Idempotente: concluir de novo não altera a data nem gera evento. A jornada é concluída junto com a
-        última tarefa."""
+        última tarefa, na mesma transação, emitindo `journey_completed`."""
         with self._uow as uow:
             journey = uow.journeys.get(journey_id)
             if journey is None:
@@ -43,6 +43,7 @@ class JourneyService:
             updated = self._reload(uow, journey_id)
             if not updated.has_active_task:
                 uow.journeys.complete(journey_id, now)
+                self._event_store.append(uow, journey.patient_id, JourneyCompleted(journey_id=journey_id))
                 updated = self._reload(uow, journey_id)
             uow.commit()
             return updated

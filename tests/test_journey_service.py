@@ -76,6 +76,8 @@ def test_last_task_completes_the_journey(world: World) -> None:
     assert journey.status is JourneyStatus.COMPLETED
     assert journey.completed_at == world.clock.now()
     assert not journey.has_active_task
+    assert world.events() == [EventName.TASK_COMPLETED, EventName.TASK_COMPLETED, EventName.JOURNEY_COMPLETED]
+    assert world.uow.events.events[-1].properties == {"journey_id": "j-1"}
 
 
 def test_completing_twice_is_idempotent(world: World) -> None:

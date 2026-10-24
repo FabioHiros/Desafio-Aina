@@ -99,7 +99,7 @@ journey-core/
 │   │   ├── protocol.py            # ProtocolTemplate + motor genérico de skip; ProtocolSession, Answer
 │   │   ├── journey.py             # Journey, Task
 │   │   ├── followup.py            # regras de elegibilidade (puras), motivos tipados, Eligible | Skipped
-│   │   └── events.py              # EventName, Event, DomainEvent + os 8 eventos (allow-list)
+│   │   └── events.py              # EventName, Event, DomainEvent + os eventos (allow-list)
 │   ├── schemas/
 │   │   ├── patient.py             # PatientCreate (normaliza telefone), PatientOut (sem PII)
 │   │   ├── protocol.py            # ProtocolStart, AnswerIn (inteiro estrito), ProtocolSessionOut
@@ -236,7 +236,7 @@ Segunda linha de defesa: os services validam primeiro, o banco garante mesmo se 
 | Sem resposta duplicada | PK `(session_id, question_id)` |
 | Estados consistentes | `CHECK`s (sessão concluída tem score e data; termos aceitos têm data) |
 | Telefone não duplicado | `phone_hash UNIQUE` |
-| Só os 8 eventos da taxonomia | `CHECK (event_name IN (...))` |
+| Só os eventos da taxonomia | `CHECK (event_name IN (...))` |
 
 - **Tarefas como linhas, não JSON:** cada tarefa tem id próprio (usado no `PATCH`), status e data; concluir uma é um `UPDATE` simples e a regra `has_active_task` é um `SELECT` indexado. Na API as tarefas voltam como lista dentro da jornada.
 - **Testes:** cada teste recebe um arquivo SQLite novo em `tmp_path`, com o schema criado por `init_db()`, o mesmo caminho da aplicação. Não usamos `:memory:` porque cada conexão abriria um banco vazio diferente.
@@ -336,7 +336,7 @@ Segue o enunciado: **quando o protocolo conclui (por skip ou pelo fim), a jornad
   `objetivo` com 1–500 caracteres; fora disso → 422.
 - **Tarefas:** placeholders lidos de `templates/journey_tasks.json`. A escolha de quais tarefas levam a um objetivo é responsabilidade do agente conversacional e não faz parte do desafio (confirmado com o recrutador); o arquivo só deixa os dados da jornada realistas.
 - A resposta que conclui o protocolo já traz o `journey_id`; `GET /patients/{id}/journey` devolve a jornada em andamento (ou a mais recente), e 404 enquanto nenhum protocolo foi concluído.
-- `PATCH /journeys/{id}/tasks/{task_id}` com `{"status": "concluida"}` conclui a tarefa → `task_completed`. Idempotente. Ao concluir a última tarefa, a jornada passa a `concluida`. Tarefas concluídas não reabrem.
+- `PATCH /journeys/{id}/tasks/{task_id}` com `{"status": "concluida"}` conclui a tarefa → `task_completed`. Idempotente. Ao concluir a última tarefa, a jornada passa a `concluida` → `journey_completed`, na mesma transação. Tarefas concluídas não reabrem.
 - Iniciar um protocolo é recusado com 409 se o paciente já tem uma sessão em andamento (`protocol_in_progress`) ou uma jornada em andamento (`journey_already_active`). Assim, a conclusão de um protocolo nunca conflita com outra jornada.
 - **LGPD:** o objetivo é texto livre e pode conter dado de saúde (dado sensível). Fica só nas tabelas de sessão e jornada; eventos levam apenas ids e contagens (`journey_id`, `task_count`). Há teste lendo a tabela `events` direto.
 
@@ -359,6 +359,7 @@ event_id · occurred_at · event_name · patient_id_hash · properties
 | `protocol_completed` | Fim do protocolo (inclusive por skip) |
 | `journey_created` | Jornada criada após o protocolo |
 | `task_completed` | Tarefa concluída |
+| `journey_completed` | Jornada concluída (última tarefa concluída) — extensão da taxonomia mínima, pois o enunciado pede evento para toda transição relevante |
 | `followup_eligible` | Motor aprovou o disparo |
 | `followup_skipped` | Motor recusou o disparo (com `reason` tipado) |
 
@@ -428,7 +429,7 @@ Extras:
 - [x] Respostas: reenvio idêntico → mesma resposta; mudar resposta, fora de ordem, sessão concluída → 409; fora da escala ou não inteiro → 422.
 - [x] Respostas e inícios simultâneos (`tests/test_protocol_concurrency.py`): mesma resposta enviada 10 vezes ao mesmo tempo é gravada uma vez e todas recebem 200; uma jornada e uma sessão por paciente.
 - [x] Jornada criada na mesma transação da conclusão: falha na jornada desfaz a conclusão (`tests/test_protocol_service.py`).
-- [x] Tarefas: concluir emite `task_completed`, é idempotente, e a última conclui a jornada.
+- [x] Tarefas: concluir emite `task_completed`, é idempotente, e a última conclui a jornada (`journey_completed`).
 - [x] Follow-up: cada motivo de recusa a partir do fluxo real, primeira regra que falha define o motivo, ordem e janela configuráveis, regras inválidas impedem a aplicação de subir (`tests/test_followup_rules.py`, `tests/test_followup_rules_file.py`).
 - [x] Follow-up simultâneo: 10 avaliações ao mesmo tempo → 1 elegível e 9 `cooldown` (`tests/test_protocol_concurrency.py`).
 - [x] Erro de validação (422) não ecoa o telefone; 409 e 500 também não; logs sem PII (`tests/test_pii.py`).
