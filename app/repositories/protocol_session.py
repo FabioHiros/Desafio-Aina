@@ -50,6 +50,15 @@ class SqlAlchemyProtocolSessionRepository:
         )
         return bool(self._session.scalar(query))
 
+    def has_completed(self, patient_id: str) -> bool:
+        query = select(
+            exists().where(
+                ProtocolSessionRow.patient_id == patient_id,
+                ProtocolSessionRow.status == SessionStatus.COMPLETED.value,
+            )
+        )
+        return bool(self._session.scalar(query))
+
     def add_answer(self, session_id: str, answer: Answer) -> None:
         self._session.add(
             ProtocolAnswerRow(

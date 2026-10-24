@@ -202,3 +202,12 @@ def test_current_journey_prefers_active_then_latest(uow: SqlAlchemyUnitOfWork) -
     assert latest.journey_id == "j-2"
     assert active is not None
     assert active.journey_id == "j-3"
+
+
+def test_has_completed_only_counts_completed_sessions(uow: SqlAlchemyUnitOfWork) -> None:
+    with uow:
+        uow.sessions.add(new_session("s-1"))
+        assert not uow.sessions.has_completed("p-1")
+        uow.sessions.complete("s-1", score=2, ended_by_skip=True, completed_at=NOW)
+        assert uow.sessions.has_completed("p-1")
+        assert not uow.sessions.has_completed("other")

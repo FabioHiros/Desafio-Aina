@@ -120,6 +120,10 @@ class InMemoryEventRepository:
             for e in self.events
         )
 
+    def latest_occurred_at(self, patient_id_hash: str, event_name: EventName) -> datetime | None:
+        matching = [e for e in self.events if e.patient_id_hash == patient_id_hash and e.event_name == event_name]
+        return max((e.occurred_at for e in matching), default=None)
+
 
 class InMemoryProtocolSessionRepository:
     def __init__(self) -> None:
@@ -135,6 +139,9 @@ class InMemoryProtocolSessionRepository:
 
     def has_in_progress(self, patient_id: str) -> bool:
         return any(s.patient_id == patient_id and s.status is SessionStatus.IN_PROGRESS for s in self.sessions.values())
+
+    def has_completed(self, patient_id: str) -> bool:
+        return any(s.patient_id == patient_id and s.status is SessionStatus.COMPLETED for s in self.sessions.values())
 
     def add_answer(self, session_id: str, answer: Answer) -> None:
         current = self.sessions[session_id]

@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import exists, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
 from app.models.events import Event, EventName
@@ -48,6 +48,13 @@ class SqlAlchemyEventRepository:
             )
         )
         return bool(self._session.scalar(query))
+
+    def latest_occurred_at(self, patient_id_hash: str, event_name: EventName) -> datetime | None:
+        query = select(func.max(EventRow.occurred_at)).where(
+            EventRow.patient_id_hash == patient_id_hash, EventRow.event_name == event_name.value
+        )
+        latest: datetime | None = self._session.scalar(query)
+        return latest.replace(tzinfo=UTC) if latest is not None else None
 
 
 def _to_domain(row: EventRow) -> Event:

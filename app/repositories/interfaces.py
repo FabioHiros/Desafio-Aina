@@ -48,6 +48,10 @@ class EventRepository(Protocol):
         """Existe evento desse tipo para o paciente com occurred_at depois de `since`?"""
         ...
 
+    def latest_occurred_at(self, patient_id_hash: str, event_name: EventName) -> datetime | None:
+        """Quando ocorreu o evento mais recente desse tipo para o paciente (None se nunca ocorreu)."""
+        ...
+
 
 class ProtocolSessionRepository(Protocol):
     def add(self, protocol_session: ProtocolSession) -> None:
@@ -59,6 +63,8 @@ class ProtocolSessionRepository(Protocol):
         ...
 
     def has_in_progress(self, patient_id: str) -> bool: ...
+
+    def has_completed(self, patient_id: str) -> bool: ...
 
     def add_answer(self, session_id: str, answer: Answer) -> None:
         """Raises AnswerAlreadyRecordedError se a pergunta já tiver resposta (respostas não mudam)."""

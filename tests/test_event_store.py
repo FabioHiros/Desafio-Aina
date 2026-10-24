@@ -135,3 +135,22 @@ def test_list_events_for_unknown_patient_is_empty(client: TestClient) -> None:
 @pytest.mark.parametrize("params", [{}, {"patient_id": "not-a-uuid"}])
 def test_list_events_requires_valid_patient_id(client: TestClient, params: dict[str, str]) -> None:
     assert client.get("/events", params=params).status_code == 422
+
+
+def test_last_occurrence_is_the_latest_event_of_that_type(
+    store: EventStore, uow: SqlAlchemyUnitOfWork, clock: FakeClock
+) -> None:
+    with uow:
+        assert store.last_occurrence(uow, "p-1", EventName.FOLLOWUP_ELIGIBLE) is None
+        store.append(uow, "p-1", FollowupEligible(template_key="a"))
+        clock.advance(hours=5)
+        store.append(uow, "p-1", FollowupEligible(template_key="b"))
+        latest = clock.now()
+        clock.advance(hours=1)
+        store.append(uow, "p-1", ProtocolCompleted(session_id="s", template_id="phq9", score=1, ended_by_skip=True))
+        store.append(uow, "p-2", FollowupEligible(template_key="c"))
+        uow.commit()
+
+    with uow:
+        assert store.last_occurrence(uow, "p-1", EventName.FOLLOWUP_ELIGIBLE) == latest
+        assert store.last_occurrence(uow, "p-1", EventName.FOLLOWUP_SKIPPED) is None

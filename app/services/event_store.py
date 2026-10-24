@@ -41,6 +41,9 @@ class EventStore:
     def exists_since(self, uow: UnitOfWork, patient_id: str, event_name: EventName, since: datetime) -> bool:
         return uow.events.exists_since(self._hasher.hash_patient_id(patient_id), event_name, since)
 
+    def last_occurrence(self, uow: UnitOfWork, patient_id: str, event_name: EventName) -> datetime | None:
+        return uow.events.latest_occurred_at(self._hasher.hash_patient_id(patient_id), event_name)
+
 
 class EventService:
     """Consulta da trilha (GET /events): abre a própria unidade de trabalho, só leitura."""
