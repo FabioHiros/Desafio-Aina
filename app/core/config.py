@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Self
 
 from pydantic import Field, SecretStr, model_validator
@@ -11,6 +12,7 @@ class Settings(BaseSettings):
     event_hash_salt: SecretStr = Field(min_length=16)
     database_url: str = "sqlite:///journey_core.db"
     log_level: str = "INFO"
+    templates_dir: Path = Path(__file__).resolve().parents[2] / "templates"
 
     @model_validator(mode="after")
     def salts_must_differ(self) -> Self:

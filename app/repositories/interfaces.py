@@ -10,6 +10,7 @@ from typing import Any, Protocol, Self
 
 from app.models.events import Event, EventName
 from app.models.patient import Patient
+from app.models.protocol import ProtocolTemplate
 
 
 class PatientRepository(Protocol):
@@ -74,3 +75,12 @@ class UnitOfWork(Protocol):
     def commit(self) -> None: ...
 
     def rollback(self) -> None: ...
+
+
+class TemplateCatalog(Protocol):
+    """Templates de protocolo e tarefas placeholder da jornada, carregados e validados na inicialização."""
+
+    def get(self, template_id: str) -> ProtocolTemplate | None: ...
+
+    @property
+    def journey_tasks(self) -> tuple[str, ...]: ...

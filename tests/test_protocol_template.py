@@ -118,7 +118,9 @@ def test_invalid_templates_are_rejected(overrides: dict[str, Any], message: str)
 
 
 def test_phq9_template_matches_the_specification() -> None:
-    phq9 = ProtocolTemplate.model_validate_json((ROOT / "templates" / "phq9.json").read_text(encoding="utf-8"))
+    phq9 = ProtocolTemplate.model_validate_json(
+        (ROOT / "templates" / "protocols" / "phq9.json").read_text(encoding="utf-8")
+    )
 
     assert phq9.template_id == "phq9"
     assert [q.id for q in phq9.questions] == [f"q{i}" for i in range(1, 10)]
