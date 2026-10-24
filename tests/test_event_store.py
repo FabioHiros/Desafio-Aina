@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 import pytest
+from fastapi.testclient import TestClient
 from pydantic import SecretStr, ValidationError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -110,3 +111,18 @@ def test_event_is_rolled_back_with_the_failed_operation(store: EventStore, uow: 
 
     with uow:
         assert store.list_by_patient(uow, "p-1") == []
+
+
+# ─────────────── GET /events ───────────────
+
+
+def test_list_events_for_unknown_patient_is_empty(client: TestClient) -> None:
+    response = client.get("/events", params={"patient_id": "00000000-0000-4000-8000-000000000000"})
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+@pytest.mark.parametrize("params", [{}, {"patient_id": "not-a-uuid"}])
+def test_list_events_requires_valid_patient_id(client: TestClient, params: dict[str, str]) -> None:
+    assert client.get("/events", params=params).status_code == 422
