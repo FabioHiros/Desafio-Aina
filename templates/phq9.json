@@ -1,0 +1,29 @@
+{
+  "template_id": "phq9",
+  "name": "PHQ-9",
+  "instructions": "Nas últimas duas semanas, com que frequência você foi incomodado por…",
+  "scale": [
+    { "value": 0, "label": "Nenhuma vez" },
+    { "value": 1, "label": "Vários dias" },
+    { "value": 2, "label": "Mais da metade dos dias" },
+    { "value": 3, "label": "Quase todos os dias" }
+  ],
+  "questions": [
+    { "id": "q1", "text": "Pouco interesse ou prazer em fazer as coisas" },
+    { "id": "q2", "text": "Sentir-se para baixo, deprimido(a) ou sem esperança" },
+    { "id": "q3", "text": "Dificuldade para pegar no sono, continuar dormindo, ou dormir demais" },
+    { "id": "q4", "text": "Sentir-se cansado(a) ou com pouca energia" },
+    { "id": "q5", "text": "Falta de apetite ou comer demais" },
+    { "id": "q6", "text": "Sentir-se mal consigo mesmo(a) — ou que é um fracasso, ou que decepcionou a família ou a si mesmo(a)" },
+    { "id": "q7", "text": "Dificuldade para se concentrar nas coisas (ex.: ler ou ver televisão)" },
+    { "id": "q8", "text": "Lentidão para se mover ou falar, ou o oposto: inquietação a ponto de movimentar-se mais que o habitual" },
+    { "id": "q9", "text": "Pensamentos de que estaria melhor morto(a), ou de se ferir de alguma forma" }
+  ],
+  "rules": [
+    {
+      "after": "q2",
+      "when": { "sum": ["q1", "q2"], "op": "lt", "value": 3 },
+      "action": "end_block"
+    }
+  ]
+}

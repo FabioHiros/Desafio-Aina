@@ -1,5 +1,6 @@
 """Motor genérico de protocolo: regras de skip interpretadas a partir do template, sem código específico."""
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -7,6 +8,7 @@ from pydantic import ValidationError
 
 from app.models.protocol import Completed, NextQuestion, ProtocolTemplate
 
+ROOT = Path(__file__).resolve().parent.parent
 SCALE = [{"value": v, "label": str(v)} for v in range(4)]
 
 
@@ -110,3 +112,23 @@ def test_invalid_templates_are_rejected(overrides: dict[str, Any], message: str)
     }
     with pytest.raises(ValidationError, match=message):
         ProtocolTemplate.model_validate({**data, **overrides})
+
+
+# ─────────────── Template PHQ-9 real ───────────────
+
+
+def test_phq9_template_matches_the_specification() -> None:
+    phq9 = ProtocolTemplate.model_validate_json((ROOT / "templates" / "phq9.json").read_text(encoding="utf-8"))
+
+    assert phq9.template_id == "phq9"
+    assert [q.id for q in phq9.questions] == [f"q{i}" for i in range(1, 10)]
+    assert [(o.value, o.label) for o in phq9.scale] == [
+        (0, "Nenhuma vez"),
+        (1, "Vários dias"),
+        (2, "Mais da metade dos dias"),
+        (3, "Quase todos os dias"),
+    ]
+    assert phq9.questions[0].text == "Pouco interesse ou prazer em fazer as coisas"
+    assert phq9.questions[8].text.startswith("Pensamentos de que estaria melhor morto(a)")
+    assert phq9.evaluate({"q1": 1, "q2": 1}) == Completed(score=2, ended_by_skip=True)
+    assert isinstance(phq9.evaluate({"q1": 1, "q2": 2}), NextQuestion)
