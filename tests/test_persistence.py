@@ -180,6 +180,31 @@ def test_only_one_active_journey_per_patient(session: Session) -> None:
         session.commit()
 
 
+def in_progress_session(session_id: str, patient_id: str = "p-1") -> ProtocolSessionRow:
+    return ProtocolSessionRow(
+        session_id=session_id,
+        patient_id=patient_id,
+        template_id="phq9",
+        objetivo="Perder 5kg",
+        status="em_andamento",
+        started_at=NOW,
+    )
+
+
+def test_only_one_protocol_session_in_progress_per_patient(session: Session) -> None:
+    session.add_all([patient(), in_progress_session("s-1")])
+    session.commit()
+
+    session.add(in_progress_session("s-2"))
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+
+def test_completed_sessions_do_not_block_a_new_one(session: Session) -> None:
+    session.add_all([patient(), completed_session("s-1"), completed_session("s-2"), in_progress_session("s-3")])
+    session.commit()
+
+
 # ─────────────── Transações ───────────────
 
 

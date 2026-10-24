@@ -2,7 +2,8 @@
 
 Regras críticas também são garantidas pelo banco (segunda linha de defesa, além dos services):
 eventos imutáveis (triggers), jornada só a partir de protocolo (session_id único e obrigatório),
-uma jornada ativa por paciente (índice único parcial), sem resposta duplicada (PK composta).
+uma sessão de protocolo e uma jornada em andamento por paciente (índices únicos parciais), sem resposta
+duplicada (PK composta). Essas garantias valem mesmo com requisições simultâneas.
 """
 
 from datetime import date, datetime
@@ -89,6 +90,10 @@ class ProtocolSessionRow(Base):
             "(status = 'concluido') = (completed_at IS NOT NULL AND score IS NOT NULL)", name="completed_state"
         ),
         Index(None, "patient_id", "status"),
+        # No máximo uma sessão em andamento por paciente (também protege contra requisições simultâneas).
+        Index(
+            "ux_protocol_sessions_one_active", "patient_id", unique=True, sqlite_where=text("status = 'em_andamento'")
+        ),
     )
 
 
