@@ -1,7 +1,7 @@
 """Regras que o próprio banco garante, independentemente dos services."""
 
 from collections.abc import Iterator
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import Engine, delete, func, select, text, update
@@ -33,7 +33,7 @@ def patient(patient_id: str = "p-1", phone_hash: str = "h-1", sex: str = "F") ->
         phone="5500000000000",
         phone_hash=phone_hash,
         name="Fulano",
-        birth_date="1990-01-01",
+        birth_date=date(1990, 1, 1),
         sex=sex,
         terms_accepted=True,
         terms_accepted_at=NOW,

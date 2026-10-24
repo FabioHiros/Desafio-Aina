@@ -5,7 +5,7 @@ eventos imutáveis (triggers), jornada só a partir de protocolo (session_id ún
 uma jornada ativa por paciente (índice único parcial), sem resposta duplicada (PK composta).
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
@@ -13,6 +13,7 @@ from sqlalchemy import (
     JSON,
     Boolean,
     CheckConstraint,
+    Date,
     Engine,
     ForeignKey,
     Index,
@@ -46,7 +47,7 @@ class PatientRow(Base):
     phone: Mapped[str] = mapped_column(String(20))
     phone_hash: Mapped[str] = mapped_column(String(64), unique=True)
     name: Mapped[str] = mapped_column(String(200))
-    birth_date: Mapped[str] = mapped_column(String(10))  # ISO date
+    birth_date: Mapped[date] = mapped_column(Date)
     sex: Mapped[str] = mapped_column(String(1))
     terms_accepted: Mapped[bool] = mapped_column(Boolean)
     terms_accepted_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
