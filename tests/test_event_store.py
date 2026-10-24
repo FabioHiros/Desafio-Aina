@@ -116,6 +116,15 @@ def test_event_is_rolled_back_with_the_failed_operation(store: EventStore, uow: 
 # ─────────────── GET /events ───────────────
 
 
+def test_list_events_returns_envelope(client: TestClient, patient_id: str) -> None:
+    response = client.get("/events", params={"patient_id": patient_id})
+
+    assert response.status_code == 200
+    first = response.json()[0]
+    assert set(first) == {"event_id", "occurred_at", "event_name", "patient_id_hash", "properties"}
+    assert patient_id not in response.text  # só o hash sai na trilha
+
+
 def test_list_events_for_unknown_patient_is_empty(client: TestClient) -> None:
     response = client.get("/events", params={"patient_id": "00000000-0000-4000-8000-000000000000"})
 

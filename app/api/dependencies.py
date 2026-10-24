@@ -15,6 +15,7 @@ from app.core.security import Hasher
 from app.repositories.interfaces import UnitOfWork
 from app.repositories.unit_of_work import SqlAlchemyUnitOfWork
 from app.services.event_store import EventService, EventStore
+from app.services.patient import PatientService
 
 
 def get_session_factory(request: Request) -> sessionmaker[Session]:
@@ -49,8 +50,15 @@ UnitOfWorkDep = Annotated[UnitOfWork, Depends(get_uow)]
 EventStoreDep = Annotated[EventStore, Depends(get_event_store)]
 
 
+def get_patient_service(
+    uow: UnitOfWorkDep, event_store: EventStoreDep, hasher: HasherDep, clock: ClockDep
+) -> PatientService:
+    return PatientService(uow, event_store, hasher, clock)
+
+
 def get_event_service(uow: UnitOfWorkDep, event_store: EventStoreDep) -> EventService:
     return EventService(uow, event_store)
 
 
+PatientServiceDep = Annotated[PatientService, Depends(get_patient_service)]
 EventServiceDep = Annotated[EventService, Depends(get_event_service)]
