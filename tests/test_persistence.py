@@ -205,6 +205,15 @@ def test_completed_sessions_do_not_block_a_new_one(session: Session) -> None:
     session.commit()
 
 
+# ─────────────── Conexão SQLite ───────────────
+
+
+def test_sqlite_connection_is_configured(engine: Engine) -> None:
+    with engine.connect() as connection:
+        assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar() == 1
+        assert connection.exec_driver_sql("PRAGMA journal_mode").scalar() == "wal"
+
+
 # ─────────────── Transações ───────────────
 
 
