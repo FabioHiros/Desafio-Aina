@@ -7,9 +7,9 @@ Núcleo determinístico de uma jornada de saúde da AINA: **consentimento**, **p
 
 ---
 
-## Regras inegociáveis do desafio
+## Requisitos do desafio
 
-Antes de qualquer linha de código, estas são as regras que o revisor vai checar:
+Como cada requisito do enunciado é atendido:
 
 | # | Regra | Como garantimos |
 |---|---|---|
@@ -76,7 +76,7 @@ Além da stack pedida (Python 3.12, FastAPI, pytest, uv, SQLite), cada bibliotec
 | `fastapi` | runtime | Stack do enunciado. |
 | `pydantic` | runtime | Pedido pelo enunciado (v2): schemas da API, templates, regras de follow-up e allow-list das properties dos eventos. |
 | `pydantic-settings` | runtime | Lê e valida a configuração do ambiente/`.env` (salts com tamanho mínimo e diferentes entre si). A aplicação falha ao subir com configuração inválida, em vez de falhar no meio de uma requisição. |
-| `sqlalchemy` | runtime | ORM tipado sobre o SQLite: schema declarado em um lugar só, constraints e índices parciais, transações explícitas pela Unit of Work. Ver [Decisões de desenho](#decisões-de-desenho). |
+| `sqlalchemy` | runtime | ORM tipado sobre o SQLite: schema declarado em um lugar só, constraints e índices parciais, transações explícitas pela Unit of Work. Ver [Persistência (SQLite)](#persistência-sqlite). |
 | `uvicorn` | runtime | Servidor ASGI para rodar o FastAPI. |
 | `pytest` | dev | Stack do enunciado. |
 | `httpx` | dev | Exigido pelo `TestClient` do FastAPI nos testes de API. |
@@ -174,7 +174,7 @@ journey-core/
 | **Unit of Work** | `repositories/interfaces.py` | Única porta da persistência: os repositórios só existem dentro de um `with uow:`, então estado e eventos de uma operação estão sempre na mesma transação. Nada é gravado sem `uow.commit()`. Detalhes em **Transações e concorrência**. |
 | **Eventos com allow-list** | `models/events.py` | Cada evento declara exatamente suas properties (`extra="forbid"`); o nome vem do tipo, então não há como gravar `protocol_completed` com o payload errado. |
 | **Contratos HTTP separados** | `schemas/` | `PatientOut` não tem campo de telefone: vazar na resposta é impossível por construção. |
-| **Relógio injetável** | interface `Clock` em `core/clock.py` | Nenhum código chama `datetime.now()`; o cooldown de 72h é testado avançando o relógio. |
+| **Relógio injetável** | interface `Clock` em `core/clock.py` | Nenhuma regra de negócio lê o relógio diretamente; o cooldown de 72h é testado avançando o relógio. |
 
 ### Proteção de PII (defesa em profundidade)
 
@@ -417,7 +417,7 @@ event_id · occurred_at · event_name · patient_id_hash · properties
 - **Avaliação pura:** o service lê numa transação um retrato dos fatos (consentimento, protocolo concluído, jornada atual, último `followup_eligible`) e as regras decidem sem acessar o banco (`models/followup.py`), o que deixa cada regra testável isoladamente.
 - **Cooldown:** conta a partir do último `followup_eligible` do paciente (pelo `patient_id_hash`), não da última avaliação; avaliações recusadas não reiniciam a janela. Exatamente 72h depois, já é elegível.
 - **Concorrência:** decisão e evento são gravados na mesma transação, e `BEGIN IMMEDIATE` serializa avaliações simultâneas. 10 avaliações ao mesmo tempo resultam em 1 elegível e 9 `cooldown`; sem `BEGIN IMMEDIATE`, o teste falhou em 3 de 5 execuções (mais de um elegível, ou seja, mensagens duplicadas para o paciente).
-- **`no_active_task` e conclusão automática:** como a jornada é concluída junto com a última tarefa, uma jornada sem tarefas em andamento já não está em andamento, e a regra anterior (`no_active_journey`) responde primeiro. A regra `has_active_task` continua no arquivo, como pede o enunciado, e protege o caso caso a regra de conclusão automática mude; é testada isoladamente.
+- **`no_active_task` e conclusão automática:** como a jornada é concluída junto com a última tarefa, uma jornada sem tarefas em andamento já não está em andamento, e a regra anterior (`no_active_journey`) responde primeiro. A regra `has_active_task` continua no arquivo, como pede o enunciado, e protege o fluxo caso a regra de conclusão automática mude; é testada isoladamente.
 - **Sob demanda:** a avaliação roda quando `POST /followups/evaluate` é chamado. O enunciado também permite o disparo automático ao concluir tarefa; escolhemos a avaliação sob demanda (ver **Decisões de desenho**).
 - Nenhuma mensagem é enviada; só a decisão e o evento.
 
