@@ -504,7 +504,6 @@ Em ordem de prioridade:
 
 1. **Disparo automático do follow-up ao concluir tarefa**, com um *outbox* transacional: a decisão `followup_eligible` grava, na mesma transação, um item para o serviço de envio consumir. Garante que nenhum follow-up aprovado se perca e que nenhum seja enviado sem estar registrado.
 2. **Autenticação entre serviços** (API key ou mTLS) e um id de cliente por requisição nos logs.
-3. **LGPD:** anonimização do paciente (apagar telefone, nome e data de nascimento de `patients`, mantendo a trilha pseudonimizada), política de retenção, e uma tabela de contatos com **consentimento por finalidade** (ex.: opt-in de marketing separado do consentimento de cuidado).
+3. **LGPD:** anonimização do paciente (apagar telefone, nome e data de nascimento de `patients`, mantendo a trilha pseudonimizada) e política de retenção.
 4. **Versionamento de templates e regras:** gravar na sessão a versão do template usada, para que mudar o JSON não altere a interpretação de sessões antigas; templates com múltiplos blocos; GAD-7.
-5. **Exportação da trilha** para analytics (BigQuery) via outbox, usando o `patient_id_hash` como chave pseudônima.
-6. **Operação:** CI (GitHub Actions com `ruff`, `mypy` e `pytest`), métricas por endpoint e paginação de `GET /events`.
+5. **Operação:** CI (GitHub Actions com `ruff`, `mypy` e `pytest`), métricas por endpoint e paginação de `GET /events`.
