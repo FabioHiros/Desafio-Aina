@@ -418,7 +418,7 @@ event_id · occurred_at · event_name · patient_id_hash · properties
 - **Cooldown:** conta a partir do último `followup_eligible` do paciente (pelo `patient_id_hash`), não da última avaliação; avaliações recusadas não reiniciam a janela. Exatamente 72h depois, já é elegível.
 - **Concorrência:** decisão e evento são gravados na mesma transação, e `BEGIN IMMEDIATE` serializa avaliações simultâneas. 10 avaliações ao mesmo tempo resultam em 1 elegível e 9 `cooldown`; sem `BEGIN IMMEDIATE`, o teste falhou em 3 de 5 execuções (mais de um elegível, ou seja, mensagens duplicadas para o paciente).
 - **`no_active_task` e conclusão automática:** como a jornada é concluída junto com a última tarefa, uma jornada sem tarefas em andamento já não está em andamento, e a regra anterior (`no_active_journey`) responde primeiro. A regra `has_active_task` continua no arquivo, como pede o enunciado, e protege o caso caso a regra de conclusão automática mude; é testada isoladamente.
-- **Sob demanda:** a avaliação roda quando `POST /followups/evaluate` é chamado. Disparo automático ao concluir tarefa (permitido pelo enunciado) ficou como evolução.
+- **Sob demanda:** a avaliação roda quando `POST /followups/evaluate` é chamado. O enunciado também permite o disparo automático ao concluir tarefa; escolhemos a avaliação sob demanda (ver **O que ficou de fora**).
 - Nenhuma mensagem é enviada; só a decisão e o evento.
 
 ---
@@ -490,7 +490,7 @@ Extras:
 ## O que ficou de fora
 
 - **Autenticação e autorização.** Autenticação de usuário final está fora do escopo pelo enunciado; a API também não tem autenticação entre serviços. Os endpoints são internos, chamados pelo agente; quem conhece um `session_id` ou `journey_id` pode operá-lo. Os ids são UUIDs aleatórios, o que reduz o risco, mas não substitui autenticação.
-- **Disparo automático do follow-up ao concluir tarefa** (o enunciado aceita os dois). A avaliação é sob demanda; o disparo automático é a primeira evolução abaixo.
+- **Disparo automático do follow-up ao concluir tarefa** (o enunciado aceita os dois). Escolhemos a avaliação sob demanda: concluir uma tarefa não decide follow-up, e quem envia a mensagem (o agente) é quem pergunta se pode enviar.
 - **Correção de respostas:** respostas gravadas não mudam, por desenho (auditoria e score). Uma correção seria uma funcionalidade explícita.
 - **Versionamento de templates e regras:** o motor usa o JSON carregado na inicialização. Editar um template e reiniciar a API muda a interpretação de sessões em andamento, e uma sessão concluída não registra com qual versão foi pontuada.
 - **Templates com mais de um bloco:** o motor tem um único bloco por template, e `end_block` conclui o protocolo. Suficiente para o PHQ-9/PHQ-2.
@@ -502,7 +502,7 @@ Extras:
 
 Em ordem de prioridade:
 
-1. **Disparo automático do follow-up ao concluir tarefa**, com um *outbox* transacional: a decisão `followup_eligible` grava, na mesma transação, um item para o serviço de envio consumir. Garante que nenhum follow-up aprovado se perca e que nenhum seja enviado sem estar registrado.
+1. **Outbox para follow-ups aprovados:** a decisão `followup_eligible` grava, na mesma transação, um item para o serviço de envio consumir. Garante que nenhum follow-up aprovado se perca, mesmo se o agente falhar depois da resposta, e que nenhum seja enviado sem estar registrado.
 2. **Autenticação entre serviços** (API key ou mTLS) e um id de cliente por requisição nos logs.
 3. **LGPD:** anonimização do paciente (apagar telefone, nome e data de nascimento de `patients`, mantendo a trilha pseudonimizada) e política de retenção.
 4. **Versionamento de templates e regras:** gravar na sessão a versão do template usada, para que mudar o JSON não altere a interpretação de sessões antigas; templates com múltiplos blocos; GAD-7.
