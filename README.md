@@ -47,6 +47,15 @@ uv run mypy app tests                                  # tipagem estrita
 
 Documentação interativa: `http://localhost:8000/docs`
 
+### Com Docker (opcional)
+
+```bash
+cp .env.example .env          # os salts vêm do .env; não entram na imagem
+docker compose up --build     # API em http://localhost:8000
+```
+
+A imagem tem só as dependências de runtime (versões do `uv.lock`), roda com usuário sem privilégios e grava o SQLite no volume `journey-data`, então os dados sobrevivem a reinícios do container. `docker compose down -v` apaga o volume e recomeça com o banco vazio. Os testes rodam fora do container (`uv run pytest`).
+
 ### Variáveis de ambiente
 
 | Variável | Obrigatória | Descrição |
@@ -148,7 +157,9 @@ journey-core/
 │   ├── protocols/phq9.json        # perguntas, escala e regras de skip (dados, não código)
 │   └── journey_tasks.json         # tarefas placeholder da jornada
 ├── rules/followup.json            # regras de elegibilidade, em ordem, com o cooldown (dados, não código)
-└── tests/                         # um arquivo por assunto; fakes.py (em memória), concurrency.py (threads)
+├── tests/                         # um arquivo por assunto; fakes.py (em memória), concurrency.py (threads)
+├── Dockerfile                     # imagem de runtime (sem dependências de dev), usuário sem privilégios
+└── compose.yaml                   # sobe a API com o .env e um volume para o SQLite
 ```
 
 ### Padrões
@@ -560,7 +571,7 @@ O histórico do Git segue o mesmo plano: um commit por assunto, cada um com seus
 - **Templates com mais de um bloco:** o motor tem um único bloco por template, e `end_block` conclui o protocolo. Suficiente para o PHQ-9/PHQ-2.
 - **Migrations versionadas:** o schema nasce com o banco (`create_all`); não há dados para migrar.
 - **Exclusão e retenção de dados (LGPD):** não há endpoint para apagar ou anonimizar um paciente.
-- **Paginação em `GET /events`**, rate limiting e Docker Compose.
+- **Paginação em `GET /events`** e rate limiting.
 - **Integrações reais** (Firestore, BigQuery, WhatsApp, Vertex AI), fora do escopo pelo enunciado.
 
 ## O que eu faria no 4º dia
@@ -573,4 +584,4 @@ Em ordem de prioridade:
 4. **Postgres em produção**, trocando `BEGIN IMMEDIATE` (lock global do SQLite) por lock da linha do paciente (`SELECT ... FOR UPDATE`), que serializa só operações do mesmo paciente; e **migrations com Alembic**.
 5. **Versionamento de templates e regras:** gravar na sessão a versão do template usada, para que mudar o JSON não altere a interpretação de sessões antigas; templates com múltiplos blocos; GAD-7.
 6. **Exportação da trilha** para analytics (BigQuery) via outbox, usando o `patient_id_hash` como chave pseudônima.
-7. **Operação:** Docker Compose, CI (GitHub Actions com `ruff`, `mypy` e `pytest`), métricas por endpoint e paginação de `GET /events`.
+7. **Operação:** CI (GitHub Actions com `ruff`, `mypy` e `pytest`), métricas por endpoint e paginação de `GET /events`.
