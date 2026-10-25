@@ -502,8 +502,7 @@ Extras:
 
 Em ordem de prioridade:
 
-1. **Outbox para follow-ups aprovados:** a decisão `followup_eligible` grava, na mesma transação, um item para o serviço de envio consumir. Garante que nenhum follow-up aprovado se perca, mesmo se o agente falhar depois da resposta, e que nenhum seja enviado sem estar registrado.
-2. **Autenticação entre serviços** (API key ou mTLS) e um id de cliente por requisição nos logs.
-3. **LGPD:** anonimização do paciente (apagar telefone, nome e data de nascimento de `patients`, mantendo a trilha pseudonimizada) e política de retenção.
-4. **Versionamento de templates e regras:** gravar na sessão a versão do template usada, para que mudar o JSON não altere a interpretação de sessões antigas; templates com múltiplos blocos; GAD-7.
-5. **Operação:** CI (GitHub Actions com `ruff`, `mypy` e `pytest`), métricas por endpoint e paginação de `GET /events`.
+1. **Autenticação entre serviços** (API key ou mTLS) e um id de cliente por requisição nos logs.
+2. **LGPD:** anonimização do paciente (apagar telefone, nome e data de nascimento de `patients`, mantendo a trilha pseudonimizada) e política de retenção.
+3. **Versionamento de templates e regras:** gravar na sessão a versão do template usada, para que mudar o JSON não altere a interpretação de sessões antigas; templates com múltiplos blocos; GAD-7.
+4. **Operação:** CI (GitHub Actions com `ruff`, `mypy` e `pytest`), métricas por endpoint e paginação de `GET /events`.
