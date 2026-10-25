@@ -1,0 +1,14 @@
+services:
+  api:
+    build: .
+    env_file: .env  # PHONE_HASH_SALT e EVENT_HASH_SALT
+    environment:
+      # Sobrescreve o DATABASE_URL do .env: dentro do container o banco fica no volume.
+      DATABASE_URL: sqlite:////data/journey_core.db
+    ports:
+      - "8000:8000"
+    volumes:
+      - journey-data:/data
+
+volumes:
+  journey-data:
