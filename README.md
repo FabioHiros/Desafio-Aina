@@ -476,6 +476,7 @@ Extras:
 ## Decisões de desenho
 
 - **SQLite em vez de dicts em memória:** os dados sobrevivem a reinícios da API, e regras críticas são garantidas também pelo banco (constraints e triggers). Continua sem credenciais de nuvem.
+- **Services dependem de interfaces, não do banco:** os repositórios e o Unit of Work são `Protocol`s em `repositories/interfaces.py`, e só `api/dependencies.py` escolhe as implementações SQLAlchemy. As regras de negócio são testadas com implementações em memória (`tests/fakes.py`), sem banco, e trocar a persistência (ex.: Postgres ou Firestore) não toca nos services. Custo: uma camada a mais de código para manter.
 - **Unit of Work dono dos repositórios, com commit explícito:** estado e eventos de uma operação ficam sempre na mesma transação, garantido pelo desenho. Esquecer o commit perde a escrita em vez de gravar algo pela metade.
 - **`BEGIN IMMEDIATE` no SQLite:** serializa escritas para que regras do tipo "verifica, depois grava" (como o cooldown) não sofram condição de corrida. Custo: escritas não rodam em paralelo, o que é aceitável para o SQLite (que já só tem um escritor por vez) e para transações curtas como as nossas.
 - **Jornada criada automaticamente, na mesma transação que conclui o protocolo:** não há endpoint para criar jornada, então "jornada só após protocolo" vale por construção, e o banco reforça (`session_id` obrigatório e único). Não existe estado intermediário "protocolo concluído sem jornada".
