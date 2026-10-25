@@ -418,7 +418,7 @@ event_id · occurred_at · event_name · patient_id_hash · properties
 - **Cooldown:** conta a partir do último `followup_eligible` do paciente (pelo `patient_id_hash`), não da última avaliação; avaliações recusadas não reiniciam a janela. Exatamente 72h depois, já é elegível.
 - **Concorrência:** decisão e evento são gravados na mesma transação, e `BEGIN IMMEDIATE` serializa avaliações simultâneas. 10 avaliações ao mesmo tempo resultam em 1 elegível e 9 `cooldown`; sem `BEGIN IMMEDIATE`, o teste falhou em 3 de 5 execuções (mais de um elegível, ou seja, mensagens duplicadas para o paciente).
 - **`no_active_task` e conclusão automática:** como a jornada é concluída junto com a última tarefa, uma jornada sem tarefas em andamento já não está em andamento, e a regra anterior (`no_active_journey`) responde primeiro. A regra `has_active_task` continua no arquivo, como pede o enunciado, e protege o caso caso a regra de conclusão automática mude; é testada isoladamente.
-- **Sob demanda:** a avaliação roda quando `POST /followups/evaluate` é chamado. O enunciado também permite o disparo automático ao concluir tarefa; escolhemos a avaliação sob demanda (ver **O que ficou de fora**).
+- **Sob demanda:** a avaliação roda quando `POST /followups/evaluate` é chamado. O enunciado também permite o disparo automático ao concluir tarefa; escolhemos a avaliação sob demanda (ver **Decisões de desenho**).
 - Nenhuma mensagem é enviada; só a decisão e o evento.
 
 ---
@@ -484,13 +484,13 @@ Extras:
 - **HMAC-SHA256 e `patient_id_hash` a partir do `patient_id`, com salts separados:** HMAC é a construção padrão para "SHA-256 com salt". A trilha é pseudonimizada a partir de um UUID aleatório, então não depende de PII, não é revertida por força bruta e não quebra se o telefone mudar.
 - **Eventos sem texto livre nem respostas clínicas:** o objetivo pode conter dado de saúde e as respostas do PHQ-9 incluem o item 9 (autolesão); eventos levam só ids, contagens, score e motivos. As respostas ficam em `protocol_answers`, então a sessão continua auditável.
 - **Regras de follow-up declarativas, mas fechadas:** o JSON escolhe quais verificações, em que ordem e com que janela; as verificações e os motivos possíveis são enums no código. Um arquivo com `check` ou `reason` desconhecido impede a aplicação de subir.
+- **Follow-up avaliado sob demanda, não disparado ao concluir tarefa:** o enunciado aceita os dois. Concluir uma tarefa não decide follow-up, e quem envia a mensagem (o agente) é quem pergunta se pode enviar, logo antes de enviar.
 - **Cooldown a partir do último elegível, com relógio injetável:** avaliações recusadas não reiniciam a janela (senão um agente que avalia com frequência nunca liberaria o follow-up), e o limite exato das 72h é testado avançando o relógio.
 - **Erros de domínio desacoplados de HTTP:** services lançam `AppError`; só `api/errors.py` conhece status codes. Facilita testar services sem FastAPI e garante um formato único de erro.
 
 ## O que ficou de fora
 
 - **Autenticação e autorização.** Autenticação de usuário final está fora do escopo pelo enunciado; a API também não tem autenticação entre serviços. Os endpoints são internos, chamados pelo agente; quem conhece um `session_id` ou `journey_id` pode operá-lo. Os ids são UUIDs aleatórios, o que reduz o risco, mas não substitui autenticação.
-- **Disparo automático do follow-up ao concluir tarefa** (o enunciado aceita os dois). Escolhemos a avaliação sob demanda: concluir uma tarefa não decide follow-up, e quem envia a mensagem (o agente) é quem pergunta se pode enviar.
 - **Correção de respostas:** respostas gravadas não mudam, por desenho (auditoria e score). Uma correção seria uma funcionalidade explícita.
 - **Versionamento de templates e regras:** o motor usa o JSON carregado na inicialização. Editar um template e reiniciar a API muda a interpretação de sessões em andamento, e uma sessão concluída não registra com qual versão foi pontuada.
 - **Templates com mais de um bloco:** o motor tem um único bloco por template, e `end_block` conclui o protocolo. Suficiente para o PHQ-9/PHQ-2.
