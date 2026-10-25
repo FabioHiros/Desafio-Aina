@@ -475,33 +475,16 @@ Extras:
 
 ## Decisões de desenho
 
-- **Erros de domínio desacoplados de HTTP:** services lançam `AppError`; só `api/errors.py` conhece status codes. Facilita testar services sem FastAPI e garante um formato único de erro.
-- **SQLite em vez de dicts em memória:** os dados sobrevivem a reinícios (o revisor pode reiniciar a API no meio do roteiro), e regras críticas são garantidas também pelo banco (constraints e triggers). Continua sem credenciais de nuvem.
-- **SQLAlchemy em vez de SQL puro:** padrão de mercado, modelos tipados e trocar de banco (ex.: Postgres) vira mudança de `DATABASE_URL` + revisão das partes específicas do SQLite (triggers, índice parcial). A camada de repositório continua isolando a persistência caso o destino seja Firestore.
-- **Sem Alembic no escopo do desafio:** sem dados para migrar, `create_all` basta e mantém o setup do revisor em um passo a menos.
-- **Jornada criada automaticamente ao fim do protocolo, como no enunciado:** o objetivo é anotado ao iniciar a sessão e as tarefas são placeholders configuráveis. Não há endpoint para criar jornada, então "jornada só após protocolo" vale por construção, e o banco reforça (`session_id` obrigatório e único).
-- **`patient_id_hash` a partir do `patient_id`, com salt próprio:** pseudonimiza a trilha sem depender de PII e sem quebrar se o telefone mudar.
-- **Texto livre fora dos eventos:** o objetivo pode conter dado de saúde; eventos levam só ids e contagens.
-- **Sem evento por resposta do protocolo:** com o valor, a trilha carregaria dado clínico (o item 9 do PHQ-9 é sobre autolesão); sem o valor, o evento não acrescentaria nada ao que `protocol_started`/`protocol_completed` já contam. As respostas ficam registradas por inteiro em `protocol_answers`, então a sessão continua auditável. Por isso as respostas não estão entre as "transições relevantes" que geram evento.
-- **Regras em JSON (não YAML):** mesmo formato dos templates, sem dependência extra (`json` é stdlib) e sem a tipagem implícita do YAML (`no` → `False`). O campo `description` substitui os comentários.
-- **Relógio injetável:** permite testar o cooldown de 72h sem depender do tempo real.
-- **Resposta identifica a pergunta (`question_id`) e reenvio idêntico é idempotente:** com WhatsApp e agentes que fazem retry, a mesma resposta pode chegar duas vezes. Só com o valor, o reenvio seria gravado como resposta da pergunta seguinte, deslocando todas as respostas (e potencialmente o item 9, de risco) sem nenhum erro. Respostas gravadas não mudam: corrigir exigiria uma funcionalidade explícita.
-- **Valor da resposta como inteiro estrito:** `"2"` ou `true` são recusados (422) em vez de convertidos; em dado clínico, conversão silenciosa esconde bugs do cliente.
-- **Templates validados na inicialização:** um template inconsistente impede a aplicação de subir, em vez de falhar no meio da sessão de um paciente.
-- **Jornada criada na mesma transação que conclui o protocolo:** não existe estado intermediário "protocolo concluído sem jornada".
-- **Unit of Work dono dos repositórios, com commit explícito:** a atomicidade de estado + eventos é garantida pelo desenho, não pela forma como as dependências foram montadas. Esquecer o commit perde a escrita em vez de gravar algo pela metade.
+- **SQLite em vez de dicts em memória:** os dados sobrevivem a reinícios da API, e regras críticas são garantidas também pelo banco (constraints e triggers). Continua sem credenciais de nuvem.
+- **Unit of Work dono dos repositórios, com commit explícito:** estado e eventos de uma operação ficam sempre na mesma transação, garantido pelo desenho. Esquecer o commit perde a escrita em vez de gravar algo pela metade.
 - **`BEGIN IMMEDIATE` no SQLite:** serializa escritas para que regras do tipo "verifica, depois grava" (como o cooldown) não sofram condição de corrida. Custo: escritas não rodam em paralelo, o que é aceitável para o SQLite (que já só tem um escritor por vez) e para transações curtas como as nossas.
-- **HMAC-SHA256 em vez de `sha256(salt + valor)`:** o enunciado pede SHA-256 com salt; HMAC é a construção padrão para isso (concatenação simples tem fraquezas conhecidas).
-- **DTOs (dataclasses imutáveis) entre camadas:** services não dependem do ORM, e PII fica fora do `repr`.
-- **`position` como ordem da trilha:** dois eventos da mesma operação podem ter o mesmo `occurred_at`; a sequência de gravação é a ordem real.
-- **`GET /patients/{id}` sem PII:** útil para conferir o estado do consentimento; devolve só id, sexo, termos e datas (minimização).
-- **Guard de PII no event store:** a regra de "sem PII" é imposta por código, não só por convenção.
-- **Primeira regra que falha define o `reason`:** comportamento previsível e auditável.
-- **Regras de follow-up declarativas, mas fechadas:** o JSON escolhe quais verificações, em que ordem e com que janela; as verificações e os motivos possíveis são enums no código. Um arquivo com `check` ou `reason` desconhecido não sobe, em vez de produzir motivos que nenhum consumidor espera.
-- **Avaliação de follow-up pura:** fatos lidos numa transação, regras aplicadas sem banco. Cada regra é testada isoladamente, inclusive o limite exato das 72h.
-- **Decisão como `Eligible | Skipped`:** um elegível sempre tem `template_key` e um recusado sempre tem `reason`, garantido pelos tipos.
-- **"Não elegível" é 200, não erro:** a avaliação funcionou; o resultado é que não há follow-up. Erros (4xx) ficam para paciente inexistente ou payload inválido.
-- **Cooldown a partir do último elegível:** avaliações recusadas não reiniciam a janela; caso contrário, um agente que avalia com frequência nunca liberaria o follow-up.
+- **Jornada criada automaticamente, na mesma transação que conclui o protocolo:** não há endpoint para criar jornada, então "jornada só após protocolo" vale por construção, e o banco reforça (`session_id` obrigatório e único). Não existe estado intermediário "protocolo concluído sem jornada".
+- **Resposta identifica a pergunta (`question_id`) e reenvio idêntico é idempotente:** com WhatsApp e agentes que fazem retry, a mesma resposta pode chegar duas vezes. Só com o valor, o reenvio seria gravado como resposta da pergunta seguinte, deslocando todas as respostas (e potencialmente o item 9, de risco) sem nenhum erro.
+- **HMAC-SHA256 e `patient_id_hash` a partir do `patient_id`, com salts separados:** HMAC é a construção padrão para "SHA-256 com salt". A trilha é pseudonimizada a partir de um UUID aleatório, então não depende de PII, não é revertida por força bruta e não quebra se o telefone mudar.
+- **Eventos sem texto livre nem respostas clínicas:** o objetivo pode conter dado de saúde e as respostas do PHQ-9 incluem o item 9 (autolesão); eventos levam só ids, contagens, score e motivos. As respostas ficam em `protocol_answers`, então a sessão continua auditável.
+- **Regras de follow-up declarativas, mas fechadas:** o JSON escolhe quais verificações, em que ordem e com que janela; as verificações e os motivos possíveis são enums no código. Um arquivo com `check` ou `reason` desconhecido impede a aplicação de subir.
+- **Cooldown a partir do último elegível, com relógio injetável:** avaliações recusadas não reiniciam a janela (senão um agente que avalia com frequência nunca liberaria o follow-up), e o limite exato das 72h é testado avançando o relógio.
+- **Erros de domínio desacoplados de HTTP:** services lançam `AppError`; só `api/errors.py` conhece status codes. Facilita testar services sem FastAPI e garante um formato único de erro.
 
 ## O que ficou de fora
 
