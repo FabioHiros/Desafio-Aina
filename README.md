@@ -76,7 +76,7 @@ Além da stack pedida (Python 3.12, FastAPI, pytest, uv, SQLite), cada bibliotec
 | `fastapi` | runtime | Stack do enunciado. |
 | `pydantic` | runtime | Pedido pelo enunciado (v2): schemas da API, templates, regras de follow-up e allow-list das properties dos eventos. |
 | `pydantic-settings` | runtime | Lê e valida a configuração do ambiente/`.env` (salts com tamanho mínimo e diferentes entre si). A aplicação falha ao subir com configuração inválida, em vez de falhar no meio de uma requisição. |
-| `sqlalchemy` | runtime | ORM tipado sobre o SQLite: schema declarado em um lugar só, constraints e índices parciais, transações explícitas pela Unit of Work. Ver [Decisões de desenho](#decisões-de-desenho). |
+| `sqlalchemy` | runtime | ORM tipado sobre o SQLite: schema declarado em um lugar só, constraints e índices parciais, transações explícitas pela Unit of Work. Ver [Persistência (SQLite)](#persistência-sqlite). |
 | `uvicorn` | runtime | Servidor ASGI para rodar o FastAPI. |
 | `pytest` | dev | Stack do enunciado. |
 | `httpx` | dev | Exigido pelo `TestClient` do FastAPI nos testes de API. |
@@ -472,95 +472,6 @@ Extras:
 
 
 ---
-
-## Roteiro de revisão (~15 min)
-
-1. Subir a API seguindo **Como rodar**.
-2. Criar paciente → iniciar o PHQ → responder até skip → ver a jornada criada (em `http://localhost:8000/docs` ou com `curl`):
-   ```bash
-   API=http://localhost:8000
-   PATIENT=$(curl -s -X POST $API/patients -H 'content-type: application/json' \
-     -d '{"phone":"+55 11 98765-4321","name":"Maria Teste","birth_date":"1990-05-10","sex":"F","terms_accepted":true}' \
-     | python3 -c 'import sys,json; print(json.load(sys.stdin)["patient_id"])')
-
-   SESSION=$(curl -s -X POST $API/patients/$PATIENT/protocols -H 'content-type: application/json' \
-     -d '{"template_id":"phq9","objetivo":"Perder 5kg em 3 meses"}' \
-     | python3 -c 'import sys,json; print(json.load(sys.stdin)["session_id"])')
-
-   curl -s -X POST $API/protocol-sessions/$SESSION/answers -H 'content-type: application/json' -d '{"question_id":"q1","value":1}'
-   curl -s -X POST $API/protocol-sessions/$SESSION/answers -H 'content-type: application/json' -d '{"question_id":"q2","value":1}'
-   # → "status": "concluido", "score": 2, "ended_by_skip": true, "journey_id": "..."
-   curl -s $API/patients/$PATIENT/journey
-   ```
-   Para ver o fluxo sem skip, responda `q1` e `q2` com valores que somem 3 ou mais e siga a `next_question` até a 9ª.
-3. Avaliar follow-up duas vezes → observar `cooldown` na segunda:
-   ```bash
-   curl -s -X POST $API/followups/evaluate -H 'content-type: application/json' -d "{\"patient_id\":\"$PATIENT\"}"
-   # → {"eligible":true,"template_key":"checkin_adesao","reason":null}
-   curl -s -X POST $API/followups/evaluate -H 'content-type: application/json' -d "{\"patient_id\":\"$PATIENT\"}"
-   # → {"eligible":false,"template_key":null,"reason":"cooldown"}
-   ```
-   (A passagem das 72h é coberta pelos testes com relógio injetável: `tests/test_followups_api.py::test_cooldown_72h`.)
-4. Conferir a trilha e a ausência de PII:
-   ```bash
-   curl -s "$API/events?patient_id=$PATIENT"
-   # patient_created → terms_accepted → protocol_started → protocol_completed → journey_created
-   # → followup_eligible → followup_skipped; só patient_id_hash, nenhum telefone, nome, data de nascimento ou objetivo
-   ```
-
----
-
-## Plano de execução (3 dias)
-
-| Dia | Foco | Resultado | Status |
-|---|---|---|---|
-| 1 | Schema, paciente/consentimento, event store, testes de PII | Cadastro + trilha de eventos sem telefone | ✅ |
-| 2 | Motor de protocolo, skip logic, jornada | PHQ-9 via JSON; skip testado; respostas idempotentes | ✅ |
-| 3 | Elegibilidade, cooldown, README, polimento | Regras declarativas, cooldown testado, roteiro de revisão | ✅ |
-
-O histórico do Git segue o mesmo plano: um commit por assunto, cada um com seus testes, todos passando em `ruff`, `mypy` e `pytest`.
-
----
-
-## Fora de escopo
-
-- WhatsApp / Meta Cloud API, Vertex AI, LangGraph, Langfuse.
-- Lógica de "quais tarefas levam a um objetivo": responsabilidade do agente conversacional; aqui as tarefas são placeholders.
-- Dashboard, BigQuery, autenticação de usuário final, deploy em GCP.
-- Interface gráfica.
-- Fórmulas clínicas inventadas (bem-estar composto, "nível de confiança" etc.).
-
----
-
-## Decisões de desenho
-
-- **Erros de domínio desacoplados de HTTP:** services lançam `AppError`; só `api/errors.py` conhece status codes. Facilita testar services sem FastAPI e garante um formato único de erro.
-- **SQLite em vez de dicts em memória:** os dados sobrevivem a reinícios (o revisor pode reiniciar a API no meio do roteiro), e regras críticas são garantidas também pelo banco (constraints e triggers). Continua sem credenciais de nuvem.
-- **SQLAlchemy em vez de SQL puro:** padrão de mercado, modelos tipados e trocar de banco (ex.: Postgres) vira mudança de `DATABASE_URL` + revisão das partes específicas do SQLite (triggers, índice parcial). A camada de repositório continua isolando a persistência caso o destino seja Firestore.
-- **Sem Alembic no escopo do desafio:** sem dados para migrar, `create_all` basta e mantém o setup do revisor em um passo a menos.
-- **Jornada criada automaticamente ao fim do protocolo, como no enunciado:** o objetivo é anotado ao iniciar a sessão e as tarefas são placeholders configuráveis. Não há endpoint para criar jornada, então "jornada só após protocolo" vale por construção, e o banco reforça (`session_id` obrigatório e único).
-- **`patient_id_hash` a partir do `patient_id`, com salt próprio:** pseudonimiza a trilha sem depender de PII e sem quebrar se o telefone mudar.
-- **Texto livre fora dos eventos:** o objetivo pode conter dado de saúde; eventos levam só ids e contagens.
-- **Sem evento por resposta do protocolo:** com o valor, a trilha carregaria dado clínico (o item 9 do PHQ-9 é sobre autolesão); sem o valor, o evento não acrescentaria nada ao que `protocol_started`/`protocol_completed` já contam. As respostas ficam registradas por inteiro em `protocol_answers`, então a sessão continua auditável. Por isso as respostas não estão entre as "transições relevantes" que geram evento.
-- **Regras em JSON (não YAML):** mesmo formato dos templates, sem dependência extra (`json` é stdlib) e sem a tipagem implícita do YAML (`no` → `False`). O campo `description` substitui os comentários.
-- **Relógio injetável:** permite testar o cooldown de 72h sem depender do tempo real.
-- **Resposta identifica a pergunta (`question_id`) e reenvio idêntico é idempotente:** com WhatsApp e agentes que fazem retry, a mesma resposta pode chegar duas vezes. Só com o valor, o reenvio seria gravado como resposta da pergunta seguinte, deslocando todas as respostas (e potencialmente o item 9, de risco) sem nenhum erro. Respostas gravadas não mudam: corrigir exigiria uma funcionalidade explícita.
-- **Valor da resposta como inteiro estrito:** `"2"` ou `true` são recusados (422) em vez de convertidos; em dado clínico, conversão silenciosa esconde bugs do cliente.
-- **Templates validados na inicialização:** um template inconsistente impede a aplicação de subir, em vez de falhar no meio da sessão de um paciente.
-- **Jornada criada na mesma transação que conclui o protocolo:** não existe estado intermediário "protocolo concluído sem jornada".
-- **Unit of Work dono dos repositórios, com commit explícito:** a atomicidade de estado + eventos é garantida pelo desenho, não pela forma como as dependências foram montadas. Esquecer o commit perde a escrita em vez de gravar algo pela metade.
-- **`BEGIN IMMEDIATE` no SQLite:** serializa escritas para que regras do tipo "verifica, depois grava" (como o cooldown) não sofram condição de corrida. Custo: escritas não rodam em paralelo, o que é aceitável para o SQLite (que já só tem um escritor por vez) e para transações curtas como as nossas.
-- **HMAC-SHA256 em vez de `sha256(salt + valor)`:** o enunciado pede SHA-256 com salt; HMAC é a construção padrão para isso (concatenação simples tem fraquezas conhecidas).
-- **DTOs (dataclasses imutáveis) entre camadas:** services não dependem do ORM, e PII fica fora do `repr`.
-- **`position` como ordem da trilha:** dois eventos da mesma operação podem ter o mesmo `occurred_at`; a sequência de gravação é a ordem real.
-- **`GET /patients/{id}` sem PII:** útil para conferir o estado do consentimento; devolve só id, sexo, termos e datas (minimização).
-- **Guard de PII no event store:** a regra de "sem PII" é imposta por código, não só por convenção.
-- **Primeira regra que falha define o `reason`:** comportamento previsível e auditável.
-- **Regras de follow-up declarativas, mas fechadas:** o JSON escolhe quais verificações, em que ordem e com que janela; as verificações e os motivos possíveis são enums no código. Um arquivo com `check` ou `reason` desconhecido não sobe, em vez de produzir motivos que nenhum consumidor espera.
-- **Avaliação de follow-up pura:** fatos lidos numa transação, regras aplicadas sem banco. Cada regra é testada isoladamente, inclusive o limite exato das 72h.
-- **Decisão como `Eligible | Skipped`:** um elegível sempre tem `template_key` e um recusado sempre tem `reason`, garantido pelos tipos.
-- **"Não elegível" é 200, não erro:** a avaliação funcionou; o resultado é que não há follow-up. Erros (4xx) ficam para paciente inexistente ou payload inválido.
-- **Cooldown a partir do último elegível:** avaliações recusadas não reiniciam a janela; caso contrário, um agente que avalia com frequência nunca liberaria o follow-up.
 
 ## O que ficou de fora
 
