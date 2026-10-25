@@ -489,15 +489,14 @@ Extras:
 
 ## O que ficou de fora
 
-- **Autenticação e autorização** (fora do escopo pelo enunciado). Os endpoints são internos, chamados pelo agente; quem conhece um `session_id` ou `journey_id` pode operá-lo. Os ids são UUIDs aleatórios, o que reduz o risco, mas não substitui autenticação.
+- **Autenticação e autorização.** Autenticação de usuário final está fora do escopo pelo enunciado; a API também não tem autenticação entre serviços. Os endpoints são internos, chamados pelo agente; quem conhece um `session_id` ou `journey_id` pode operá-lo. Os ids são UUIDs aleatórios, o que reduz o risco, mas não substitui autenticação.
 - **Disparo automático do follow-up ao concluir tarefa** (o enunciado aceita os dois). A avaliação é sob demanda; o disparo automático é a primeira evolução abaixo.
-- **Envio de mensagens:** só a decisão e o evento, como pedido.
-- **Correção de respostas:** respostas gravadas não mudam, por desenho (auditoria e score). Uma correção seria uma funcionalidade explícita, provavelmente uma nova sessão.
+- **Correção de respostas:** respostas gravadas não mudam, por desenho (auditoria e score). Uma correção seria uma funcionalidade explícita.
+- **Versionamento de templates e regras:** o motor usa o JSON carregado na inicialização. Editar um template e reiniciar a API muda a interpretação de sessões em andamento, e uma sessão concluída não registra com qual versão foi pontuada.
 - **Templates com mais de um bloco:** o motor tem um único bloco por template, e `end_block` conclui o protocolo. Suficiente para o PHQ-9/PHQ-2.
 - **Migrations versionadas:** o schema nasce com o banco (`create_all`); não há dados para migrar.
 - **Exclusão e retenção de dados (LGPD):** não há endpoint para apagar ou anonimizar um paciente.
 - **Paginação em `GET /events`** e rate limiting.
-- **Integrações reais** (Firestore, BigQuery, WhatsApp, Vertex AI), fora do escopo pelo enunciado.
 
 ## O que eu faria no 4º dia
 
