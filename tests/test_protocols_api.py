@@ -56,6 +56,7 @@ def test_start_returns_first_question(client: TestClient, patient_id: str) -> No
 
 
 def test_start_without_consent_is_refused(client: TestClient) -> None:
+    """Obrigatório: sem terms_accepted=true não se inicia protocolo."""
     patient_id = client.post("/patients", json={**PATIENT_PAYLOAD, "terms_accepted": False}).json()["patient_id"]
 
     response = start(client, patient_id)
@@ -100,6 +101,7 @@ def test_second_session_in_progress_is_refused(client: TestClient, patient_id: s
 
 
 def test_phq2_skip_ends_with_partial_score(client: TestClient, patient_id: str, session_id: str) -> None:
+    """Obrigatório: q1 + q2 < 3 encerra o bloco, conclui o protocolo e devolve a soma parcial."""
     body = answer_all(client, session_id, 1, 1)
 
     assert body["status"] == "concluido"

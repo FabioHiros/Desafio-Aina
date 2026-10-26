@@ -122,6 +122,8 @@ class ProtocolService:
         self._create_journey(uow, session, now)
 
     def _create_journey(self, uow: UnitOfWork, session: ProtocolSession, now: datetime) -> None:
+        """Objetivo anotado no início da sessão; tarefas placeholder do catálogo (a escolha real das tarefas é
+        responsabilidade do agente conversacional, fora do journey-core)."""
         journey = Journey(
             journey_id=new_id(),
             patient_id=session.patient_id,

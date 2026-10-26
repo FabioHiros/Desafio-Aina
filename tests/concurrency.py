@@ -7,6 +7,10 @@ ATTEMPTS = 10
 
 
 def run_concurrently[S, T](make: Callable[[], S], action: Callable[[S], T], attempts: int = ATTEMPTS) -> list[T | str]:
+    """Cria um service por thread com `make`, libera todas juntas e roda `action`.
+
+    Erros de domínio viram o `code` do erro; qualquer outro erro vira "unexpected ..." para a mensagem de falha.
+    """
     barrier = threading.Barrier(attempts)
     results: list[T | str] = []
     lock = threading.Lock()

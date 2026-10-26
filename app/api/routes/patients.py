@@ -26,4 +26,5 @@ def get_patient(patient_id: UUID, service: PatientServiceDep) -> PatientOut:
 
 @router.post("/{patient_id}/terms", response_model=PatientOut, responses={404: {"model": ErrorResponse}})
 def accept_terms(patient_id: UUID, service: PatientServiceDep) -> PatientOut:
+    """Aceite dos termos após o cadastro. Idempotente."""
     return PatientOut.from_domain(service.accept_terms(str(patient_id)))

@@ -48,12 +48,14 @@ async def app_error_handler(_: Request, exc: Exception) -> JSONResponse:
 
 
 async def validation_error_handler(_: Request, exc: Exception) -> JSONResponse:
+    """O handler padrão do FastAPI ecoa o `input` recebido; aqui só saem local, tipo e mensagem."""
     errors = cast(RequestValidationError, exc).errors()
     details = [{"loc": list(err.get("loc", ())), "type": err.get("type"), "msg": err.get("msg")} for err in errors]
     return JSONResponse(status_code=422, content=error_body("validation_error", "Requisição inválida.", details))
 
 
 async def http_error_handler(_: Request, exc: Exception) -> JSONResponse:
+    """404 de rota inexistente, 405 etc. no mesmo formato dos demais erros."""
     error = cast(StarletteHTTPException, exc)
     phrase = HTTPStatus(error.status_code).phrase
     code = phrase.lower().replace(" ", "_")

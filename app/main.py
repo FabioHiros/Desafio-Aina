@@ -17,6 +17,10 @@ from app.repositories.templates import FileTemplateCatalog
 
 
 def create_app(settings: Settings | None = None, clock: Clock | None = None) -> FastAPI:
+    """Composition root: único lugar onde as dependências concretas são escolhidas.
+
+    Testes passam settings e um relógio falso; em produção tudo vem do ambiente.
+    """
     settings = settings or Settings()
     configure_logging(settings.log_level)
 

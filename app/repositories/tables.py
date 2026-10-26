@@ -26,6 +26,7 @@ from app.models.protocol import SessionStatus
 
 
 def init_db(engine: Engine) -> None:
+    """Cria tabelas, índices e triggers que ainda não existem. Seguro rodar a cada inicialização."""
     Base.metadata.create_all(engine)
 
 

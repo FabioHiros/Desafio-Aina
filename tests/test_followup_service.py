@@ -65,6 +65,7 @@ def test_eligible_emits_followup_eligible_with_template_key(world: World) -> Non
 
 
 def test_cooldown_72h(world: World) -> None:
+    """Obrigatório: 1ª avaliação elegível, 2ª recusada por cooldown, após 72h elegível de novo."""
     assert world.service.evaluate("p-1") == ELIGIBLE
 
     world.clock.advance(hours=1)
@@ -85,6 +86,7 @@ def test_cooldown_72h(world: World) -> None:
 
 
 def test_skipped_evaluations_do_not_restart_the_cooldown(world: World) -> None:
+    """O cooldown conta a partir do último follow-up elegível, não da última avaliação."""
     world.service.evaluate("p-1")
     for _ in range(5):
         world.clock.advance(hours=10)

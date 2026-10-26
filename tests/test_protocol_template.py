@@ -73,6 +73,7 @@ def test_other_comparisons(op: str, threshold: int, q1: int, skips: bool) -> Non
 
 
 def test_rules_are_generic_for_any_template() -> None:
+    """Outro template, outra regra: o mesmo motor, sem nenhuma mudança de código."""
     rule = {"after": "q1", "when": {"sum": ["q1"], "op": "gte", "value": 3}, "action": "end_block"}
     other = template(questions=3, rules=[rule], template_id="outro")
 

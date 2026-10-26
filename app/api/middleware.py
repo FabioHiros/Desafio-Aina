@@ -15,6 +15,7 @@ _VALID_REQUEST_ID = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 
 
 async def request_context(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    """Correlaciona logs por requisição e registra método, rota, status e duração (sem query string nem corpo)."""
     incoming = request.headers.get(REQUEST_ID_HEADER, "")
     request_id = incoming if _VALID_REQUEST_ID.match(incoming) else new_id()
     token = request_id_var.set(request_id)

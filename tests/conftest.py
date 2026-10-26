@@ -27,6 +27,7 @@ PII_VALUES = (PHONE_DIGITS, "98765-4321", "987654321", "Maria Teste da Silva", "
 
 @pytest.fixture
 def engine(tmp_path: Path) -> Iterator[Engine]:
+    """Banco SQLite novo por teste."""
     engine = create_db_engine(f"sqlite:///{tmp_path / 'test.db'}")
     init_db(engine)
     yield engine

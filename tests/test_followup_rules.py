@@ -86,6 +86,7 @@ def test_cooldown_boundary(elapsed: timedelta, eligible: bool) -> None:
 
 
 def test_rules_are_configurable_order_and_window() -> None:
+    """Mudar a ordem ou a janela é editar o JSON, não o código."""
     custom = FollowupRules.model_validate(
         {
             "template_key": "outro",

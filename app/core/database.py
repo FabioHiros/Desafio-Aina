@@ -28,10 +28,17 @@ def _configure_sqlite_connection(dbapi_connection: sqlite3.Connection, _: Any) -
 
 
 def _begin_immediate(connection: Connection) -> None:
+    """Toda transação pega o lock de escrita já no início.
+
+    Sem isso, duas transações podem ler ao mesmo tempo ("não existe follow-up nas últimas 72h") e as duas
+    escreverem depois. Com BEGIN IMMEDIATE, verificação e escrita rodam serializadas. O equivalente em
+    Postgres seria travar a linha do paciente (SELECT ... FOR UPDATE) no início de cada operação.
+    """
     connection.exec_driver_sql("BEGIN IMMEDIATE")
 
 
 def create_session_factory(engine: Engine) -> sessionmaker[Session]:
+    """Fábrica usada pelo UnitOfWork: cada unidade de trabalho abre e fecha a própria sessão."""
     return sessionmaker(bind=engine, expire_on_commit=False)
 
 
@@ -63,5 +70,6 @@ class UTCDateTime(TypeDecorator[datetime]):
 
 
 def sql_in(column: str, values: Iterable[str]) -> str:
+    """Expressão para CHECK (coluna IN (...)), normalmente a partir dos valores de um enum."""
     quoted = ", ".join(f"'{value}'" for value in map(str, values))
     return f"{column} IN ({quoted})"

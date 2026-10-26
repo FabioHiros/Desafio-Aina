@@ -73,6 +73,7 @@ class ProtocolTemplate(_TemplateModel):
 
     @model_validator(mode="after")
     def check_consistency(self) -> Self:
+        """Um template inconsistente falha ao carregar, não no meio da sessão de um paciente."""
         values = [option.value for option in self.scale]
         if len(set(values)) != len(values):
             raise ValueError("valores da escala repetidos")
@@ -96,6 +97,10 @@ class ProtocolTemplate(_TemplateModel):
         return frozenset(option.value for option in self.scale)
 
     def evaluate(self, answers: Mapping[str, int]) -> Progress:
+        """Dado o que já foi respondido, decide: próxima pergunta, fim por skip ou fim normal.
+
+        Percorre as perguntas em ordem; após cada pergunta respondida, aplica as regras ligadas a ela.
+        """
         for position, question in enumerate(self.questions, start=1):
             if question.id not in answers:
                 return NextQuestion(question=question, position=position)

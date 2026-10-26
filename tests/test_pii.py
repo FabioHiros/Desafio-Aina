@@ -14,6 +14,7 @@ from tests.fakes import FakeClock
 
 
 def stored_events(settings: Settings) -> str:
+    """A tabela events lida direto do banco, sem passar pela API."""
     engine = create_engine(settings.database_url)
     with engine.connect() as connection:
         rows = connection.execute(text("SELECT * FROM events")).fetchall()
@@ -32,6 +33,7 @@ def test_events_never_contain_pii(client: TestClient) -> None:
 
 
 def test_persisted_events_never_contain_pii(client: TestClient, patient_id: str, settings: Settings) -> None:
+    """Além da resposta da API: lê a tabela events direto do banco."""
     dumped = stored_events(settings)
     assert dumped != "[]"
     for value in PII_VALUES:
@@ -82,6 +84,7 @@ def test_unexpected_error_returns_generic_500_without_pii(settings: Settings, cl
 
 
 def test_objective_never_reaches_the_event_trail(client: TestClient, patient_id: str, settings: Settings) -> None:
+    """O objetivo é texto livre e pode conter dado de saúde: fica na sessão e na jornada, nunca nos eventos."""
     objetivo = "Controlar a ansiedade depois do diagnóstico"
     session_id = client.post(
         f"/patients/{patient_id}/protocols", json={"template_id": "phq9", "objetivo": objetivo}
@@ -99,6 +102,7 @@ def test_objective_never_reaches_the_event_trail(client: TestClient, patient_id:
 def test_full_journey_trail_never_contains_pii(
     client: TestClient, settings: Settings, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """Fluxo completo, gerando todos os tipos de evento: nenhum carrega PII, o phone_hash ou o patient_id."""
     with caplog.at_level(logging.DEBUG):
         created = client.post("/patients", json=PATIENT_PAYLOAD)
         assert created.status_code == 201

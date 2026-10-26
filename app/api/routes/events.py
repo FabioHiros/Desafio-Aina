@@ -14,4 +14,9 @@ router = APIRouter(tags=["events"])
 def list_events(
     service: EventServiceDep, patient_id: Annotated[UUID, Query(description="Id interno do paciente.")]
 ) -> list[EventOut]:
+    """Trilha do paciente em ordem de gravação.
+
+    Recebe o id interno (conforme o enunciado) e filtra pelo hash. Id sem eventos devolve lista vazia:
+    a resposta não revela se um paciente existe.
+    """
     return [EventOut.from_domain(event) for event in service.trail(str(patient_id))]

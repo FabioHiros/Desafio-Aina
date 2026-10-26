@@ -260,6 +260,7 @@ def test_resend_of_final_answer_returns_the_same_journey(world: World) -> None:
 
 
 def test_journey_failure_rolls_back_the_completion(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sessão concluída, protocol_completed, jornada e journey_created: tudo junto ou nada."""
     session_id = start(world).session.session_id
     world.service.answer(session_id, "q1", 1)
 

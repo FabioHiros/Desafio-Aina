@@ -94,6 +94,8 @@ def test_simultaneous_followup_evaluations_allow_one_followup(
     clock: FakeClock,
     make_service: Callable[[], ProtocolService],
 ) -> None:
+    """O cooldown é "verifica, depois grava" sem constraint possível no banco: 10 avaliações simultâneas devem
+    resultar em exatamente 1 follow-up elegível e 9 recusas por cooldown."""
     service = make_service()
     session_id = service.start(patient_id, "phq9", "Perder 5kg").session.session_id
     service.answer(session_id, "q1", 0)

@@ -39,6 +39,7 @@ def followup_events(client: TestClient, patient_id: str) -> list[tuple[str, dict
 
 
 def test_cooldown_72h(client: TestClient, patient_id: str, journey: dict[str, Any], clock: FakeClock) -> None:
+    """Obrigatório: avaliar duas vezes e observar o cooldown; após 72h, elegível de novo."""
     first = evaluate(client, patient_id)
     second = evaluate(client, patient_id)
 

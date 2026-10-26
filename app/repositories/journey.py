@@ -51,6 +51,7 @@ class SqlAlchemyJourneyRepository:
         return _to_domain(row) if row is not None else None
 
     def get_current_for_patient(self, patient_id: str) -> Journey | None:
+        """A jornada em andamento, ou a mais recente se nenhuma estiver em andamento."""
         active_first = case((JourneyRow.status == JourneyStatus.IN_PROGRESS.value, 0), else_=1)
         query = (
             select(JourneyRow)

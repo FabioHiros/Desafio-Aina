@@ -87,6 +87,7 @@ def _journey_active(facts: FollowupFacts) -> bool:
 
 
 def _cooldown(facts: FollowupFacts, rule: FollowupRule, now: datetime) -> bool:
+    """Passa se não houve follow-up elegível nas últimas `hours` horas."""
     if facts.last_eligible_at is None:
         return True
     return now - facts.last_eligible_at >= timedelta(hours=rule.params["hours"])

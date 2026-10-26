@@ -12,6 +12,7 @@ router = APIRouter(tags=["journeys"])
 
 @router.get("/patients/{patient_id}/journey", response_model=JourneyOut, responses={404: {"model": ErrorResponse}})
 def get_journey(patient_id: UUID, service: JourneyServiceDep) -> JourneyOut:
+    """A jornada em andamento do paciente, ou a mais recente. 404 enquanto nenhum protocolo foi concluído."""
     return to_out(service.current_for_patient(str(patient_id)))
 
 
@@ -21,6 +22,7 @@ def get_journey(patient_id: UUID, service: JourneyServiceDep) -> JourneyOut:
     responses={404: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
 )
 def complete_task(journey_id: UUID, task_id: UUID, _: TaskUpdate, service: JourneyServiceDep) -> JourneyOut:
+    """Marca a tarefa como concluída (idempotente). A jornada é concluída junto com a última tarefa."""
     return to_out(service.complete_task(str(journey_id), str(task_id)))
 
 

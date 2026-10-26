@@ -60,6 +60,8 @@ def test_nothing_is_saved_without_commit(uow: SqlAlchemyUnitOfWork, clock: FakeC
 
 
 def test_concurrent_registrations_of_the_same_phone(session_factory: sessionmaker[Session], clock: FakeClock) -> None:
+    """10 threads cadastram o mesmo telefone ao mesmo tempo: exatamente 1 cadastro, 9 conflitos, nenhum erro 500
+    ("database is locked") e exatamente um patient_created na trilha."""
     attempts = 10
     barrier = threading.Barrier(attempts)
     outcomes: list[str] = []
@@ -92,6 +94,9 @@ def test_concurrent_registrations_of_the_same_phone(session_factory: sessionmake
 
 
 def test_concurrent_check_then_write_is_serialized(session_factory: sessionmaker[Session], clock: FakeClock) -> None:
+    """O padrão do cooldown de 72h: "se não existe evento recente, grava um". Não há constraint de banco que
+    proteja isso; só a serialização das transações (BEGIN IMMEDIATE) impede que duas requisições simultâneas
+    leiam "não existe" e gravem as duas. Esperado: exatamente um evento e nenhum erro."""
     attempts = 10
     barrier = threading.Barrier(attempts)
     errors: list[str] = []
