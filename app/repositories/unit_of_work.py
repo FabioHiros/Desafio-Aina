@@ -37,37 +37,36 @@ class SqlAlchemyUnitOfWork:
         try:
             self.rollback()  # não faz nada se commit() já rodou; desfaz tudo caso contrário
         finally:
-            self._active_session.close()
+            self._open_session().close()
             self._session = None
 
     @property
     def patients(self) -> SqlAlchemyPatientRepository:
-        self._active_session  # noqa: B018 - falha se usado fora do `with`
+        self._open_session()
         return self._patients
 
     @property
     def events(self) -> SqlAlchemyEventRepository:
-        self._active_session  # noqa: B018 - falha se usado fora do `with`
+        self._open_session()
         return self._events
 
     @property
     def sessions(self) -> SqlAlchemyProtocolSessionRepository:
-        self._active_session  # noqa: B018 - falha se usado fora do `with`
+        self._open_session()
         return self._sessions
 
     @property
     def journeys(self) -> SqlAlchemyJourneyRepository:
-        self._active_session  # noqa: B018 - falha se usado fora do `with`
+        self._open_session()
         return self._journeys
 
     def commit(self) -> None:
-        self._active_session.commit()
+        self._open_session().commit()
 
     def rollback(self) -> None:
-        self._active_session.rollback()
+        self._open_session().rollback()
 
-    @property
-    def _active_session(self) -> Session:
+    def _open_session(self) -> Session:
         if self._session is None:
             raise RuntimeError("UnitOfWork usado fora de um bloco `with`")
         return self._session

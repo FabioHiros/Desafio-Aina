@@ -11,7 +11,7 @@ from enum import StrEnum
 class Sex(StrEnum):
     F = "F"
     M = "M"
-    O = "O"  # noqa: E741 - "outro", valor definido no contrato
+    O = "O"
 
 
 @dataclass(frozen=True, slots=True)

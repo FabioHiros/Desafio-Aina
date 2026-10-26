@@ -8,7 +8,7 @@ Nenhum handler devolve ou loga o valor enviado pelo cliente (pode ser telefone, 
 
 import logging
 from http import HTTPStatus
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -47,26 +47,27 @@ def status_for(exc: AppError) -> int:
     return 500
 
 
-async def app_error_handler(_: Request, exc: AppError) -> JSONResponse:
-    status = status_for(exc)
+async def app_error_handler(_: Request, exc: Exception) -> JSONResponse:
+    error = cast(AppError, exc)
+    status = status_for(error)
     if status >= 500:
-        logger.error("domain error without category: %s", type(exc).__name__)
-    return JSONResponse(status_code=status, content=error_body(exc.code, exc.message))
+        logger.error("domain error without category: %s", type(error).__name__)
+    return JSONResponse(status_code=status, content=error_body(error.code, error.message))
 
 
-async def validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
+async def validation_error_handler(_: Request, exc: Exception) -> JSONResponse:
     """O handler padrão do FastAPI ecoa o `input` recebido; aqui só saem local, tipo e mensagem."""
-    details = [
-        {"loc": list(err.get("loc", ())), "type": err.get("type"), "msg": err.get("msg")} for err in exc.errors()
-    ]
+    errors = cast(RequestValidationError, exc).errors()
+    details = [{"loc": list(err.get("loc", ())), "type": err.get("type"), "msg": err.get("msg")} for err in errors]
     return JSONResponse(status_code=422, content=error_body("validation_error", "Requisição inválida.", details))
 
 
-async def http_error_handler(_: Request, exc: StarletteHTTPException) -> JSONResponse:
+async def http_error_handler(_: Request, exc: Exception) -> JSONResponse:
     """404 de rota inexistente, 405 etc. no mesmo formato dos demais erros."""
-    phrase = HTTPStatus(exc.status_code).phrase
+    error = cast(StarletteHTTPException, exc)
+    phrase = HTTPStatus(error.status_code).phrase
     code = phrase.lower().replace(" ", "_")
-    return JSONResponse(status_code=exc.status_code, content=error_body(code, phrase), headers=exc.headers)
+    return JSONResponse(status_code=error.status_code, content=error_body(code, phrase), headers=error.headers)
 
 
 async def unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -78,7 +79,7 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> JSONRespo
 def register_exception_handlers(app: FastAPI) -> None:
     # A tipagem do Starlette exige handlers de Exception genérica, mas em runtime cada handler
     # só recebe o tipo para o qual foi registrado.
-    app.add_exception_handler(AppError, app_error_handler)  # type: ignore[arg-type]
-    app.add_exception_handler(RequestValidationError, validation_error_handler)  # type: ignore[arg-type]
-    app.add_exception_handler(StarletteHTTPException, http_error_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(AppError, app_error_handler)
+    app.add_exception_handler(RequestValidationError, validation_error_handler)
+    app.add_exception_handler(StarletteHTTPException, http_error_handler)
     app.add_exception_handler(Exception, unhandled_error_handler)

@@ -2,13 +2,14 @@
 
 from dataclasses import dataclass, replace
 from datetime import date
+from typing import Any
 
 import pytest
 from pydantic import SecretStr
 
 from app.core.errors import PatientAlreadyExistsError, PatientNotFoundError
 from app.core.security import Hasher
-from app.models.events import EventName
+from app.models.events import Event, EventName
 from app.models.patient import NewPatient, Sex
 from app.services.event_store import EventStore
 from app.services.patient import PatientService
@@ -72,10 +73,10 @@ def test_failure_after_writing_rolls_back_state_and_events(world: World, monkeyp
 
     original_append = world.uow.events.append
 
-    def append(*args: object, **kwargs: object) -> object:
+    def append(*args: Any, **kwargs: Any) -> Event:
         if kwargs.get("event_name") == EventName.TERMS_ACCEPTED:
             fail_on_terms()
-        return original_append(*args, **kwargs)  # type: ignore[arg-type]
+        return original_append(*args, **kwargs)
 
     monkeypatch.setattr(world.uow.events, "append", append)
 

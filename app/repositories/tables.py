@@ -10,10 +10,10 @@ from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
-    DDL,
     JSON,
     Boolean,
     CheckConstraint,
+    Connection,
     Date,
     Engine,
     ForeignKey,
@@ -181,8 +181,15 @@ class EventRow(Base):
     )
 
 
-for _trigger in (
+EVENT_TRIGGERS = (
     "CREATE TRIGGER events_no_update BEFORE UPDATE ON events BEGIN SELECT RAISE(ABORT, 'events are append-only'); END",
     "CREATE TRIGGER events_no_delete BEFORE DELETE ON events BEGIN SELECT RAISE(ABORT, 'events are append-only'); END",
-):
-    event.listen(EventRow.__table__, "after_create", DDL(_trigger))  # type: ignore[no-untyped-call]
+)
+
+
+def _create_event_triggers(_table: Any, connection: Connection, **_: Any) -> None:
+    for trigger in EVENT_TRIGGERS:
+        connection.exec_driver_sql(trigger)
+
+
+event.listen(EventRow.__table__, "after_create", _create_event_triggers)

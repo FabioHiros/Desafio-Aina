@@ -47,7 +47,7 @@ def test_append_hashes_patient_id(store: EventStore, uow: SqlAlchemyUnitOfWork) 
 
 def test_event_properties_reject_unknown_fields() -> None:
     with pytest.raises(ValidationError):
-        FollowupEligible(template_key="x", phone="5511987654321")  # type: ignore[call-arg]
+        FollowupEligible.model_validate({"template_key": "x", "phone": "5511987654321"})
 
 
 def test_append_rejects_pii_keys_even_if_schema_allows_them(store: EventStore, uow: SqlAlchemyUnitOfWork) -> None:

@@ -196,7 +196,7 @@ journey-core/
 
 ### Persistência (SQLite)
 
-- **SQLAlchemy 2 (ORM tipado com `Mapped[]`).** O schema inteiro está em `repositories/tables.py`, fonte única lida de cima a baixo. `init_db()` roda `create_all` na inicialização (idempotente). O que o ORM não expressa (triggers append-only de `events`) é anexado como `DDL` no evento `after_create` da tabela.
+- **SQLAlchemy 2 (ORM tipado com `Mapped[]`).** O schema inteiro está em `repositories/tables.py`, fonte única lida de cima a baixo. `init_db()` roda `create_all` na inicialização (idempotente). O que o ORM não expressa (triggers append-only de `events`) é criado por um listener no evento `after_create` da tabela.
 - **Sem migrations por enquanto:** o schema nasce junto com o banco; não há dados de produção para evoluir. Constraints já têm nomes determinísticos (`naming_convention`), o que deixa o caminho pronto para adotar Alembic depois.
 - **Conexão SQLite configurada na engine:** `PRAGMA foreign_keys = ON` (o SQLite vem com FKs desligadas), `journal_mode = WAL` (leitores não bloqueiam o escritor) e `BEGIN IMMEDIATE` em toda transação (ver abaixo).
 
