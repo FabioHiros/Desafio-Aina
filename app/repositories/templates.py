@@ -1,13 +1,3 @@
-"""Catálogo de templates lido de arquivos JSON na inicialização.
-
-    templates/
-    ├── protocols/<template_id>.json   # um template de protocolo por arquivo (ex.: phq9.json)
-    └── journey_tasks.json             # tarefas placeholder da jornada criada ao fim do protocolo
-
-Tudo é validado ao carregar: um arquivo inválido impede a aplicação de subir, em vez de falhar no meio da
-sessão de um paciente.
-"""
-
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -27,8 +17,6 @@ class _JourneyTasksFile(BaseModel):
 
 
 class FileTemplateCatalog:
-    """Implementação de TemplateCatalog (interfaces.py) sobre arquivos JSON."""
-
     def __init__(self, protocols: dict[str, ProtocolTemplate], journey_tasks: tuple[str, ...]) -> None:
         self._protocols = protocols
         self._journey_tasks = journey_tasks
@@ -48,7 +36,7 @@ class FileTemplateCatalog:
 
         tasks = _parse(_JourneyTasksFile, directory / "journey_tasks.json")
         for titulo in tasks.tarefas:
-            if not 1 <= len(titulo) <= 200:  # mesmo limite da coluna journey_tasks.titulo
+            if not 1 <= len(titulo) <= 200:
                 raise TemplateLoadError("journey_tasks.json: cada tarefa deve ter de 1 a 200 caracteres")
         return cls(protocols, tasks.tarefas)
 

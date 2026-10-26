@@ -1,10 +1,3 @@
-"""Elegibilidade de follow-up: regras declarativas (rules/followup.json) avaliadas em ordem.
-
-Cada regra aponta para uma verificação conhecida pelo código (`check`) e diz o motivo tipado de recusa
-(`reason`). A primeira regra que falha define o motivo; se todas passam, o paciente é elegível.
-A avaliação é pura: recebe um retrato dos fatos (FollowupFacts) e o instante atual, sem acessar banco.
-"""
-
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -34,8 +27,6 @@ class SkipReason(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class FollowupFacts:
-    """O que as regras precisam saber sobre o paciente, lido numa única transação."""
-
     terms_accepted: bool
     has_completed_protocol: bool
     journey: Journey | None
@@ -96,7 +87,6 @@ def _journey_active(facts: FollowupFacts) -> bool:
 
 
 def _cooldown(facts: FollowupFacts, rule: FollowupRule, now: datetime) -> bool:
-    """Passa se não houve follow-up elegível nas últimas `hours` horas."""
     if facts.last_eligible_at is None:
         return True
     return now - facts.last_eligible_at >= timedelta(hours=rule.params["hours"])

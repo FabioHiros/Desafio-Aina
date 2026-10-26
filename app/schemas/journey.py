@@ -1,5 +1,3 @@
-"""Contratos HTTP da jornada. Nomes de campos seguem o enunciado (objetivo, tarefas, titulo, status)."""
-
 from datetime import datetime
 from typing import Literal
 
@@ -26,8 +24,6 @@ class JourneyOut(BaseModel):
 
 
 class TaskUpdate(BaseModel):
-    """Só a transição para concluída é permitida: tarefas concluídas não reabrem."""
-
     model_config = ConfigDict(extra="forbid")
 
     status: Literal["concluida"] = Field(examples=["concluida"])

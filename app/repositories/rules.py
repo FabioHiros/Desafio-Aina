@@ -1,8 +1,3 @@
-"""Regras de elegibilidade de follow-up lidas de rules/followup.json na inicialização.
-
-Um arquivo inválido (check ou reason desconhecido, cooldown sem janela...) impede a aplicação de subir.
-"""
-
 from pathlib import Path
 
 from pydantic import ValidationError

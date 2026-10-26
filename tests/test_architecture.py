@@ -1,10 +1,3 @@
-"""Regras de dependência entre camadas. Falham se alguém importar na direção errada.
-
-api → services → repositories → models
- └──→ schemas ──────────────────↗
-core: base técnica (config, banco, segurança, erros), não conhece nenhuma camada acima.
-"""
-
 import ast
 from pathlib import Path
 
@@ -13,7 +6,6 @@ import pytest
 APP = Path(__file__).resolve().parent.parent / "app"
 
 FORBIDDEN: dict[str, tuple[str, ...]] = {
-    # Domínio puro: sem banco, sem HTTP, sem outras camadas.
     "models": (
         "sqlalchemy",
         "fastapi",
@@ -24,11 +16,8 @@ FORBIDDEN: dict[str, tuple[str, ...]] = {
         "app.services",
         "app.api",
     ),
-    # Contratos HTTP descrevem dados; não acessam banco nem regras.
     "schemas": ("sqlalchemy", "fastapi", "starlette", "app.repositories", "app.services", "app.api"),
-    # Persistência não conhece HTTP nem regras de negócio.
     "repositories": ("fastapi", "starlette", "app.schemas", "app.services", "app.api"),
-    # Regras de negócio não conhecem HTTP nem os contratos da API, e só enxergam as interfaces de persistência.
     "services": (
         "fastapi",
         "starlette",
@@ -40,7 +29,6 @@ FORBIDDEN: dict[str, tuple[str, ...]] = {
         "app.repositories.unit_of_work",
         "app.repositories.tables",
     ),
-    # Base técnica: não depende de nenhuma camada da aplicação.
     "core": ("fastapi", "starlette", "app.models", "app.schemas", "app.repositories", "app.services", "app.api"),
 }
 

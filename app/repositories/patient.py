@@ -10,8 +10,6 @@ from app.repositories.tables import PatientRow
 
 
 class SqlAlchemyPatientRepository:
-    """Implementação SQLAlchemy de PatientRepository (interfaces.py)."""
-
     def __init__(self, session: Session) -> None:
         self._session = session
 
@@ -32,7 +30,6 @@ class SqlAlchemyPatientRepository:
         try:
             self._session.flush()
         except IntegrityError as exc:
-            # Corrida entre dois cadastros do mesmo telefone: o UNIQUE do banco decide.
             if "phone_hash" in str(exc.orig):
                 raise PatientAlreadyExistsError from None
             raise

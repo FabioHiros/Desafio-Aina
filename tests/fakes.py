@@ -1,5 +1,3 @@
-"""Implementações de teste das interfaces da aplicação (Clock e repositories/interfaces.py)."""
-
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import TracebackType
@@ -18,8 +16,6 @@ from app.models.protocol import Answer, ProtocolSession, ProtocolTemplate, Sessi
 
 
 class FakeClock:
-    """Relógio controlado pelo teste: o tempo só anda quando o teste manda."""
-
     def __init__(self, start: datetime = datetime(2026, 10, 24, 12, 0, tzinfo=UTC)) -> None:
         self._now = start
 
@@ -31,8 +27,6 @@ class FakeClock:
 
 
 class InMemoryUnitOfWork:
-    """Unidade de trabalho em memória com rollback de verdade: sem commit, o estado volta ao snapshot."""
-
     def __init__(self) -> None:
         self.patients = InMemoryPatientRepository()
         self.events = InMemoryEventRepository()

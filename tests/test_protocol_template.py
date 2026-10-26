@@ -1,5 +1,3 @@
-"""Motor genérico de protocolo: regras de skip interpretadas a partir do template, sem código específico."""
-
 from pathlib import Path
 from typing import Any
 
@@ -30,9 +28,6 @@ PHQ2_RULE = {"after": "q2", "when": {"sum": ["q1", "q2"], "op": "lt", "value": 3
 
 def answers(*values: int) -> dict[str, int]:
     return {f"q{i}": value for i, value in enumerate(values, start=1)}
-
-
-# ─────────────── Avaliação ───────────────
 
 
 def test_first_question_when_nothing_answered() -> None:
@@ -78,15 +73,11 @@ def test_other_comparisons(op: str, threshold: int, q1: int, skips: bool) -> Non
 
 
 def test_rules_are_generic_for_any_template() -> None:
-    """Outro template, outra regra: o mesmo motor, sem nenhuma mudança de código."""
     rule = {"after": "q1", "when": {"sum": ["q1"], "op": "gte", "value": 3}, "action": "end_block"}
     other = template(questions=3, rules=[rule], template_id="outro")
 
     assert other.evaluate({"q1": 3}) == Completed(score=3, ended_by_skip=True)
     assert other.evaluate(answers(1, 1, 1)) == Completed(score=3, ended_by_skip=False)
-
-
-# ─────────────── Validação do template ───────────────
 
 
 @pytest.mark.parametrize(
@@ -112,9 +103,6 @@ def test_invalid_templates_are_rejected(overrides: dict[str, Any], message: str)
     }
     with pytest.raises(ValidationError, match=message):
         ProtocolTemplate.model_validate({**data, **overrides})
-
-
-# ─────────────── Template PHQ-9 real ───────────────
 
 
 def test_phq9_template_matches_the_specification() -> None:

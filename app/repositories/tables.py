@@ -1,11 +1,3 @@
-"""Schema completo do banco (SQLAlchemy). Fonte única: `init_db()` cria tudo a partir daqui.
-
-Regras críticas também são garantidas pelo banco (segunda linha de defesa, além dos services):
-eventos imutáveis (triggers), jornada só a partir de protocolo (session_id único e obrigatório),
-uma sessão de protocolo e uma jornada em andamento por paciente (índices únicos parciais), sem resposta
-duplicada (PK composta). Essas garantias valem mesmo com requisições simultâneas.
-"""
-
 from datetime import date, datetime
 from typing import Any
 
@@ -34,16 +26,10 @@ from app.models.protocol import SessionStatus
 
 
 def init_db(engine: Engine) -> None:
-    """Cria tabelas, índices e triggers que ainda não existem. Seguro rodar a cada inicialização."""
     Base.metadata.create_all(engine)
 
 
-# ─────────────── Pacientes ───────────────
-
-
 class PatientRow(Base):
-    """Cadastro operacional: único lugar onde telefone, nome e data de nascimento existem."""
-
     __tablename__ = "patients"
 
     patient_id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -62,15 +48,7 @@ class PatientRow(Base):
     )
 
 
-# ─────────────── Protocolo ───────────────
-
-
 class ProtocolSessionRow(Base):
-    """Estado da sessão. As perguntas vivem em templates/*.json, não no banco.
-
-    objetivo é anotado ao iniciar a sessão e copiado para a jornada quando o protocolo conclui.
-    """
-
     __tablename__ = "protocol_sessions"
 
     session_id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -92,7 +70,6 @@ class ProtocolSessionRow(Base):
             "(status = 'concluido') = (completed_at IS NOT NULL AND score IS NOT NULL)", name="completed_state"
         ),
         Index(None, "patient_id", "status"),
-        # No máximo uma sessão em andamento por paciente (também protege contra requisições simultâneas).
         Index(
             "ux_protocol_sessions_one_active", "patient_id", unique=True, sqlite_where=text("status = 'em_andamento'")
         ),
@@ -102,20 +79,14 @@ class ProtocolSessionRow(Base):
 class ProtocolAnswerRow(Base):
     __tablename__ = "protocol_answers"
 
-    # PK composta: a mesma pergunta não pode ser respondida duas vezes na sessão.
     session_id: Mapped[str] = mapped_column(ForeignKey("protocol_sessions.session_id"), primary_key=True)
     question_id: Mapped[str] = mapped_column(String(50), primary_key=True)
     position: Mapped[int] = mapped_column(Integer)
-    value: Mapped[int] = mapped_column(Integer)  # escala validada pelo service a partir do template
+    value: Mapped[int] = mapped_column(Integer)
     answered_at: Mapped[datetime] = mapped_column(UTCDateTime)
 
 
-# ─────────────── Jornada ───────────────
-
-
 class JourneyRow(Base):
-    """Criada automaticamente quando o protocolo conclui: objetivo vem da sessão, tarefas do template."""
-
     __tablename__ = "journeys"
 
     journey_id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -132,7 +103,6 @@ class JourneyRow(Base):
         CheckConstraint("length(objetivo) BETWEEN 1 AND 500", name="objetivo_length"),
         CheckConstraint(sql_in("status", JourneyStatus), name="status"),
         CheckConstraint("(status = 'concluida') = (completed_at IS NOT NULL)", name="completed_state"),
-        # No máximo uma jornada em andamento por paciente.
         Index("ux_journeys_one_active", "patient_id", unique=True, sqlite_where=text("status = 'em_andamento'")),
     )
 
@@ -155,18 +125,9 @@ class JourneyTaskRow(Base):
     )
 
 
-# ─────────────── Event store (append-only) ───────────────
-
-
 class EventRow(Base):
-    """Trilha append-only. Sem FK para patients: é exportável e só se liga ao paciente pelo hash.
-
-    UPDATE/DELETE são bloqueados pelos triggers definidos abaixo da classe.
-    """
-
     __tablename__ = "events"
 
-    # Sequência global de gravação: ordena a trilha mesmo quando dois eventos têm o mesmo occurred_at.
     position: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     event_id: Mapped[str] = mapped_column(String(36), unique=True)
     occurred_at: Mapped[datetime] = mapped_column(UTCDateTime)

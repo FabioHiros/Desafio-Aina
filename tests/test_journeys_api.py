@@ -1,5 +1,3 @@
-"""Jornada via HTTP, incluindo o teste obrigatório "jornada criada somente após protocolo"."""
-
 from typing import Any
 
 import pytest
@@ -35,7 +33,6 @@ def journey(client: TestClient, patient_id: str) -> dict[str, Any]:
 
 
 def test_journey_only_exists_after_the_protocol_completes(client: TestClient, patient_id: str) -> None:
-    """Obrigatório: antes do protocolo, e durante a sessão, não há jornada; ao concluir, ela existe."""
     before = client.get(f"/patients/{patient_id}/journey")
     assert (before.status_code, before.json()["error"]["code"]) == (404, "journey_not_found")
 

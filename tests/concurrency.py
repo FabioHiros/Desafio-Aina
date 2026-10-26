@@ -1,5 +1,3 @@
-"""Utilitário para testes de concorrência com banco real: N threads liberadas ao mesmo tempo."""
-
 import threading
 from collections.abc import Callable
 
@@ -9,10 +7,6 @@ ATTEMPTS = 10
 
 
 def run_concurrently[S, T](make: Callable[[], S], action: Callable[[S], T], attempts: int = ATTEMPTS) -> list[T | str]:
-    """Cria um service por thread com `make`, libera todas juntas e roda `action`.
-
-    Erros de domínio viram o `code` do erro; qualquer outro erro vira "unexpected ..." para a mensagem de falha.
-    """
     barrier = threading.Barrier(attempts)
     results: list[T | str] = []
     lock = threading.Lock()
@@ -24,7 +18,7 @@ def run_concurrently[S, T](make: Callable[[], S], action: Callable[[S], T], atte
             outcome: T | str = action(service)
         except AppError as exc:
             outcome = exc.code
-        except Exception as exc:  # registrado para a mensagem de falha
+        except Exception as exc:
             outcome = f"unexpected {type(exc).__name__}: {exc}"
         with lock:
             results.append(outcome)

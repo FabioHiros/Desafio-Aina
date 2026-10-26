@@ -6,18 +6,10 @@ from app.core.security import Hasher
 from app.models.events import DomainEvent, Event, EventName
 from app.repositories.interfaces import UnitOfWork
 
-# Segunda barreira, além da allow-list de cada evento: chaves que nunca podem existir em properties.
 FORBIDDEN_PROPERTY_KEYS = frozenset({"phone", "telefone", "name", "nome", "birth_date", "data_nascimento", "objetivo"})
 
 
 class EventStore:
-    """Única porta de entrada da trilha de eventos.
-
-    Recebe o patient_id em claro e é o único lugar que o converte em patient_id_hash.
-    Não tem transação própria: todo método recebe a unidade de trabalho aberta de quem chamou, então um
-    evento só pode ser gravado junto com a mudança de estado que ele descreve.
-    """
-
     def __init__(self, hasher: Hasher, clock: Clock) -> None:
         self._hasher = hasher
         self._clock = clock
@@ -46,8 +38,6 @@ class EventStore:
 
 
 class EventService:
-    """Consulta da trilha (GET /events): abre a própria unidade de trabalho, só leitura."""
-
     def __init__(self, uow: UnitOfWork, event_store: EventStore) -> None:
         self._uow = uow
         self._event_store = event_store

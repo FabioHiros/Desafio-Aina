@@ -1,5 +1,3 @@
-"""Regras que o próprio banco garante, independentemente dos services."""
-
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta, timezone
 
@@ -18,7 +16,7 @@ from app.repositories.tables import (
 )
 
 NOW = datetime(2026, 10, 24, 12, 0, tzinfo=UTC)
-NOW_DB = "2026-10-24 12:00:00.000000"  # formato em que o SQLAlchemy grava datas no SQLite, para INSERTs em SQL puro
+NOW_DB = "2026-10-24 12:00:00.000000"
 
 
 @pytest.fixture
@@ -72,14 +70,8 @@ def event(event_id: str = "e-1", event_name: str = "patient_created", occurred_a
     )
 
 
-# ─────────────── Schema ───────────────
-
-
 def test_init_db_is_idempotent(engine: Engine) -> None:
     init_db(engine)
-
-
-# ─────────────── Event store ───────────────
 
 
 def test_events_cannot_be_updated(session: Session) -> None:
@@ -113,9 +105,6 @@ def test_event_properties_must_be_json(session: Session) -> None:
         )
 
 
-# ─────────────── Datas ───────────────
-
-
 def test_datetimes_round_trip_as_utc(session: Session) -> None:
     sao_paulo = timezone(timedelta(hours=-3))
     session.add(event(occurred_at=datetime(2026, 10, 24, 9, 0, tzinfo=sao_paulo)))
@@ -131,9 +120,6 @@ def test_naive_datetime_is_rejected(session: Session) -> None:
     session.add(event(occurred_at=datetime(2026, 10, 24, 12, 0)))
     with pytest.raises(StatementError, match="timezone"):
         session.commit()
-
-
-# ─────────────── Pacientes, protocolo e jornada ───────────────
 
 
 def test_duplicate_phone_hash_is_rejected(session: Session) -> None:
@@ -205,16 +191,10 @@ def test_completed_sessions_do_not_block_a_new_one(session: Session) -> None:
     session.commit()
 
 
-# ─────────────── Conexão SQLite ───────────────
-
-
 def test_sqlite_connection_is_configured(engine: Engine) -> None:
     with engine.connect() as connection:
         assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar() == 1
         assert connection.exec_driver_sql("PRAGMA journal_mode").scalar() == "wal"
-
-
-# ─────────────── Transações ───────────────
 
 
 def test_transaction_rolls_back_everything_on_error(session_factory: sessionmaker[Session]) -> None:

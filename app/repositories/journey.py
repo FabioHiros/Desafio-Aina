@@ -10,8 +10,6 @@ from app.repositories.tables import JourneyRow, JourneyTaskRow
 
 
 class SqlAlchemyJourneyRepository:
-    """Implementação SQLAlchemy de JourneyRepository (interfaces.py). Uma linha por tarefa."""
-
     def __init__(self, session: Session) -> None:
         self._session = session
 
@@ -40,7 +38,6 @@ class SqlAlchemyJourneyRepository:
         try:
             self._session.flush()
         except IntegrityError as exc:
-            # Índice único parcial: uma jornada em andamento por paciente.
             if "journeys.patient_id" in str(exc.orig):
                 raise JourneyAlreadyActiveError from None
             raise
@@ -54,7 +51,6 @@ class SqlAlchemyJourneyRepository:
         return _to_domain(row) if row is not None else None
 
     def get_current_for_patient(self, patient_id: str) -> Journey | None:
-        """A jornada em andamento, ou a mais recente se nenhuma estiver em andamento."""
         active_first = case((JourneyRow.status == JourneyStatus.IN_PROGRESS.value, 0), else_=1)
         query = (
             select(JourneyRow)

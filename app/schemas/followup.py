@@ -12,8 +12,6 @@ class FollowupEvaluate(BaseModel):
 
 
 class FollowupDecisionOut(BaseModel):
-    """Elegível: `template_key` do follow-up a disparar. Não elegível: `reason` tipado. Nada é enviado."""
-
     eligible: bool
     template_key: str | None
     reason: SkipReason | None

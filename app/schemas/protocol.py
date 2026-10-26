@@ -1,5 +1,3 @@
-"""Contratos HTTP das sessões de protocolo."""
-
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StringConstraints
@@ -44,8 +42,6 @@ class QuestionOut(BaseModel):
 
 
 class ProtocolSessionOut(BaseModel):
-    """Próxima pergunta enquanto a sessão está em andamento; resultado e jornada quando concluída."""
-
     session_id: str
     template_id: str
     status: SessionStatus

@@ -10,13 +10,6 @@ from app.repositories.protocol_session import SqlAlchemyProtocolSessionRepositor
 
 
 class SqlAlchemyUnitOfWork:
-    """Implementação SQLAlchemy de UnitOfWork (interfaces.py).
-
-    Cada `with` abre uma sessão própria e cria os repositórios sobre ela: é isso que garante que estado e
-    eventos de uma operação estão na mesma transação. Não é reentrante: abrir um `with` dentro de outro na
-    mesma instância é um erro de programação e falha na hora.
-    """
-
     def __init__(self, session_factory: sessionmaker[Session]) -> None:
         self._session_factory = session_factory
         self._session: Session | None = None
@@ -35,7 +28,7 @@ class SqlAlchemyUnitOfWork:
         self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
     ) -> None:
         try:
-            self.rollback()  # não faz nada se commit() já rodou; desfaz tudo caso contrário
+            self.rollback()
         finally:
             self._open_session().close()
             self._session = None

@@ -1,5 +1,3 @@
-"""SqlAlchemyUnitOfWork: atomicidade, commit explícito, guardas de uso e concorrência com banco real."""
-
 import threading
 from datetime import date, timedelta
 
@@ -29,9 +27,6 @@ def uow(session_factory: sessionmaker[Session]) -> SqlAlchemyUnitOfWork:
     return SqlAlchemyUnitOfWork(session_factory)
 
 
-# ─────────────── Guardas de uso ───────────────
-
-
 def test_repositories_are_unavailable_outside_the_block(uow: SqlAlchemyUnitOfWork) -> None:
     with pytest.raises(RuntimeError, match="fora de um bloco"):
         _ = uow.patients
@@ -59,17 +54,12 @@ def test_nothing_is_saved_without_commit(uow: SqlAlchemyUnitOfWork, clock: FakeC
         assert uow.patients.get(patient.patient_id) == patient
 
     with uow:
-        uow.patients.mark_terms_accepted(patient.patient_id, clock.now())  # sem commit
+        uow.patients.mark_terms_accepted(patient.patient_id, clock.now())
     with uow:
         assert uow.patients.get(patient.patient_id) == patient
 
 
-# ─────────────── Concorrência ───────────────
-
-
 def test_concurrent_registrations_of_the_same_phone(session_factory: sessionmaker[Session], clock: FakeClock) -> None:
-    """10 threads cadastram o mesmo telefone ao mesmo tempo: exatamente 1 cadastro, 9 conflitos, nenhum erro 500
-    ("database is locked") e exatamente um patient_created na trilha."""
     attempts = 10
     barrier = threading.Barrier(attempts)
     outcomes: list[str] = []
@@ -83,7 +73,7 @@ def test_concurrent_registrations_of_the_same_phone(session_factory: sessionmake
             outcome = "created"
         except PatientAlreadyExistsError:
             outcome = "duplicate"
-        except Exception as exc:  # qualquer outro erro é falha do teste, registrado para a mensagem
+        except Exception as exc:
             outcome = f"error: {type(exc).__name__}: {exc}"
         with outcomes_lock:
             outcomes.append(outcome)
@@ -102,9 +92,6 @@ def test_concurrent_registrations_of_the_same_phone(session_factory: sessionmake
 
 
 def test_concurrent_check_then_write_is_serialized(session_factory: sessionmaker[Session], clock: FakeClock) -> None:
-    """O padrão do cooldown de 72h: "se não existe evento recente, grava um". Não há constraint de banco que
-    proteja isso; só a serialização das transações (BEGIN IMMEDIATE) impede que duas requisições simultâneas
-    leiam "não existe" e gravem as duas. Esperado: exatamente um evento e nenhum erro."""
     attempts = 10
     barrier = threading.Barrier(attempts)
     errors: list[str] = []
@@ -119,7 +106,7 @@ def test_concurrent_check_then_write_is_serialized(session_factory: sessionmaker
                 if not store.exists_since(uow, "p-1", EventName.FOLLOWUP_ELIGIBLE, window_start):
                     store.append(uow, "p-1", FollowupEligible(template_key="checkin_adesao"))
                     uow.commit()
-        except Exception as exc:  # registrado para a mensagem de falha
+        except Exception as exc:
             errors.append(f"{type(exc).__name__}: {exc}")
 
     threads = [threading.Thread(target=check_then_write) for _ in range(attempts)]

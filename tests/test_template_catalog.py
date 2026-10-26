@@ -15,7 +15,6 @@ TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
 
 @pytest.fixture
 def templates(tmp_path: Path) -> Path:
-    """Cópia editável do diretório real de templates."""
     return Path(shutil.copytree(TEMPLATES, tmp_path / "templates"))
 
 

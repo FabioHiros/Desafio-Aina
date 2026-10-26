@@ -1,10 +1,3 @@
-"""Eventos: a taxonomia, o contrato das properties de cada evento e o evento persistido.
-
-Allow-list: cada evento declara exatamente os campos que pode carregar (extra="forbid"), então incluir
-um campo novo, e com ele um possível vazamento de PII, é sempre uma decisão explícita e visível.
-O nome do evento vem do tipo, então não há como gravar `protocol_completed` com o payload errado.
-"""
-
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -29,10 +22,8 @@ class EventName(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Event:
-    """Evento persistido na trilha (envelope + properties). Imutável."""
-
     event_id: str
-    position: int  # ordem global de gravação: desempata eventos com o mesmo occurred_at
+    position: int
     occurred_at: datetime
     event_name: EventName
     patient_id_hash: str
@@ -40,14 +31,9 @@ class Event:
 
 
 class DomainEvent(BaseModel):
-    """Base das properties de cada evento."""
-
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     event_name: ClassVar[EventName]
-
-
-# ─────────────── Paciente ───────────────
 
 
 class PatientCreated(DomainEvent):
@@ -56,9 +42,6 @@ class PatientCreated(DomainEvent):
 
 class TermsAccepted(DomainEvent):
     event_name = EventName.TERMS_ACCEPTED
-
-
-# ─────────────── Protocolo ───────────────
 
 
 class ProtocolStarted(DomainEvent):
@@ -75,9 +58,6 @@ class ProtocolCompleted(DomainEvent):
     template_id: str
     score: int
     ended_by_skip: bool
-
-
-# ─────────────── Jornada ───────────────
 
 
 class JourneyCreated(DomainEvent):
@@ -99,9 +79,6 @@ class JourneyCompleted(DomainEvent):
     event_name = EventName.JOURNEY_COMPLETED
 
     journey_id: str
-
-
-# ─────────────── Follow-up ───────────────
 
 
 class FollowupEligible(DomainEvent):

@@ -17,14 +17,9 @@ from app.repositories.templates import FileTemplateCatalog
 
 
 def create_app(settings: Settings | None = None, clock: Clock | None = None) -> FastAPI:
-    """Composition root: único lugar onde as dependências concretas são escolhidas.
-
-    Testes passam settings e um relógio falso; em produção tudo vem do ambiente.
-    """
-    settings = settings or Settings()  # campos obrigatórios vêm do ambiente (.env)
+    settings = settings or Settings()
     configure_logging(settings.log_level)
 
-    # Templates e regras são validados aqui: um arquivo inválido impede a aplicação de subir.
     catalog = FileTemplateCatalog.load(settings.templates_dir)
     followup_rules = load_followup_rules(settings.followup_rules_path)
     engine = create_db_engine(settings.database_url)

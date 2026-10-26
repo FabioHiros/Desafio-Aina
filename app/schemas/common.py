@@ -10,8 +10,6 @@ class ErrorDetail(BaseModel):
 
 
 class ErrorResponse(BaseModel):
-    """Formato único de todo erro: {"error": {"code", "message", "details"?}}."""
-
     error: ErrorDetail
 
 

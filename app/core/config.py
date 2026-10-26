@@ -19,7 +19,6 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def salts_must_differ(self) -> Self:
-        # Salts iguais fariam o vazamento de um expor os dois hashes.
         if self.phone_hash_salt.get_secret_value() == self.event_hash_salt.get_secret_value():
             raise ValueError("PHONE_HASH_SALT e EVENT_HASH_SALT devem ser diferentes")
         return self

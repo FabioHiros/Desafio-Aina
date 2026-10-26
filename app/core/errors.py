@@ -1,10 +1,3 @@
-"""Erros da aplicação. Não conhecem HTTP: o mapeamento para status fica em api/errors.py.
-
-Cada erro herda de uma categoria (NotFound, Conflict, PermissionDenied, BusinessRuleViolation), e o
-status HTTP é decidido pela categoria. Mensagens são fixas por tipo e nunca incluem dados do paciente.
-"""
-
-
 class AppError(Exception):
     code: str = "internal_error"
     message: str = "Erro interno."
@@ -15,36 +8,24 @@ class AppError(Exception):
         super().__init__(self.message)
 
 
-# ─────────────── Categorias ───────────────
-
-
 class NotFoundError(AppError):
     code = "not_found"
     message = "Recurso não encontrado."
 
 
 class ConflictError(AppError):
-    """A operação conflita com o estado atual (duplicidade, estado encerrado, operação concorrente)."""
-
     code = "conflict"
     message = "Conflito com o estado atual."
 
 
 class PermissionDeniedError(AppError):
-    """Uma regra do domínio impede a operação (ex.: falta de consentimento)."""
-
     code = "permission_denied"
     message = "Operação não permitida."
 
 
 class BusinessRuleViolationError(AppError):
-    """Dados bem formados que violam uma regra de negócio (ex.: resposta fora da escala)."""
-
     code = "business_rule_violation"
     message = "Regra de negócio violada."
-
-
-# ─────────────── Pacientes ───────────────
 
 
 class PatientNotFoundError(NotFoundError):
@@ -60,9 +41,6 @@ class PatientAlreadyExistsError(ConflictError):
 class ConsentRequiredError(PermissionDeniedError):
     code = "missing_consent"
     message = "Paciente não aceitou os termos."
-
-
-# ─────────────── Protocolo ───────────────
 
 
 class TemplateNotFoundError(NotFoundError):
@@ -81,8 +59,6 @@ class InvalidAnswerError(BusinessRuleViolationError):
 
 
 class UnexpectedQuestionError(ConflictError):
-    """Resposta para uma pergunta que não é a pendente (fora de ordem). A mensagem diz qual é a esperada."""
-
     code = "unexpected_question"
     message = "A pergunta respondida não é a pergunta atual."
 
@@ -92,8 +68,6 @@ class UnexpectedQuestionError(ConflictError):
 
 
 class AnswerAlreadyRecordedError(ConflictError):
-    """Tentativa de mudar uma resposta já gravada. Reenvio idêntico não é erro: devolve a mesma resposta."""
-
     code = "answer_already_recorded"
     message = "Esta pergunta já foi respondida com outro valor."
 
@@ -106,9 +80,6 @@ class SessionClosedError(ConflictError):
 class ProtocolInProgressError(ConflictError):
     code = "protocol_in_progress"
     message = "Paciente já possui uma sessão de protocolo em andamento."
-
-
-# ─────────────── Jornada ───────────────
 
 
 class JourneyNotFoundError(NotFoundError):

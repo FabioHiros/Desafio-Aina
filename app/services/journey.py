@@ -1,5 +1,3 @@
-"""Jornada: consulta e conclusão de tarefas. A criação acontece em ProtocolService, ao concluir o protocolo."""
-
 from app.core.clock import Clock
 from app.core.errors import JourneyNotFoundError, PatientNotFoundError, TaskNotFoundError
 from app.models.events import JourneyCompleted, TaskCompleted
@@ -15,7 +13,6 @@ class JourneyService:
         self._clock = clock
 
     def current_for_patient(self, patient_id: str) -> Journey:
-        """A jornada em andamento, ou a mais recente se nenhuma estiver em andamento."""
         with self._uow as uow:
             if uow.patients.get(patient_id) is None:
                 raise PatientNotFoundError
@@ -25,8 +22,6 @@ class JourneyService:
             return journey
 
     def complete_task(self, journey_id: str, task_id: str) -> Journey:
-        """Idempotente: concluir de novo não altera a data nem gera evento. A jornada é concluída junto com a
-        última tarefa, na mesma transação, emitindo `journey_completed`."""
         with self._uow as uow:
             journey = uow.journeys.get(journey_id)
             if journey is None:

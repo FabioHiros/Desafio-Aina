@@ -7,8 +7,6 @@ from app.models.events import Event, EventName
 
 
 class EventOut(BaseModel):
-    """Envelope como persistido: sem patient_id em claro e sem PII."""
-
     event_id: str
     occurred_at: datetime
     event_name: EventName

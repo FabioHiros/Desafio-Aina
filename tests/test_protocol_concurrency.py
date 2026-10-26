@@ -1,9 +1,3 @@
-"""Requisições simultâneas (protocolo e follow-up), com banco real e threads.
-
-Cenário real: o agente reenvia a mesma resposta (retry, webhook duplicado) enquanto a primeira ainda está
-sendo processada.
-"""
-
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
@@ -63,7 +57,6 @@ def test_simultaneous_identical_answers_are_recorded_once(
 
     results = run_concurrently(make_service, answer_q1)
 
-    # Nenhum erro (todos recebem 200) e todos veem a mesma próxima pergunta.
     assert results == ["q2"] * ATTEMPTS
     assert count(session_factory, ProtocolAnswerRow) == 1
 
@@ -95,17 +88,12 @@ def test_simultaneous_starts_create_one_session(
     assert count(session_factory, ProtocolSessionRow) == 1
 
 
-# ─────────────── Follow-up ───────────────
-
-
 def test_simultaneous_followup_evaluations_allow_one_followup(
     patient_id: str,
     session_factory: sessionmaker[Session],
     clock: FakeClock,
     make_service: Callable[[], ProtocolService],
 ) -> None:
-    """O cooldown é "verifica, depois grava" sem constraint possível no banco: 10 avaliações simultâneas devem
-    resultar em exatamente 1 follow-up elegível e 9 recusas por cooldown."""
     service = make_service()
     session_id = service.start(patient_id, "phq9", "Perder 5kg").session.session_id
     service.answer(session_id, "q1", 0)

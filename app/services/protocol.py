@@ -1,20 +1,3 @@
-"""Sessões de protocolo: início, respostas (idempotentes) e conclusão.
-
-Quando o protocolo conclui (por skip ou pelo fim), a jornada é criada na mesma transação: sessão concluída,
-`protocol_completed`, jornada e `journey_created` são gravados juntos, ou nada é gravado.
-
-Regras de resposta (o cliente sempre diz qual pergunta está respondendo):
-
-| Situação                                         | Resultado                                           |
-|--------------------------------------------------|-----------------------------------------------------|
-| resposta para a pergunta pendente                | grava; devolve a próxima pergunta ou o resultado    |
-| reenvio idêntico de uma resposta já gravada      | não grava nada; devolve o mesmo estado (retry)      |
-| outro valor para uma pergunta já respondida      | AnswerAlreadyRecordedError (respostas não mudam)    |
-| pergunta diferente da pendente                   | UnexpectedQuestionError (informa a esperada)        |
-| nova resposta com a sessão concluída             | SessionClosedError                                  |
-| valor fora da escala do template                 | InvalidAnswerError                                  |
-"""
-
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -48,12 +31,10 @@ from app.services.event_store import EventStore
 
 @dataclass(frozen=True, slots=True)
 class SessionState:
-    """O que o cliente precisa saber depois de cada operação."""
-
     session: ProtocolSession
     template: ProtocolTemplate
-    next_question: NextQuestion | None  # None quando a sessão está concluída
-    journey: Journey | None = None  # criada quando a sessão conclui
+    next_question: NextQuestion | None
+    journey: Journey | None = None
 
 
 class ProtocolService:
@@ -108,7 +89,7 @@ class ProtocolService:
             if recorded is not None:
                 if recorded.value != value:
                     raise AnswerAlreadyRecordedError
-                return self._state(uow, session, template)  # reenvio idêntico: mesma resposta, nada gravado
+                return self._state(uow, session, template)
 
             progress = template.evaluate(session.answer_values)
             if session.status is SessionStatus.COMPLETED or isinstance(progress, Completed):
@@ -141,8 +122,6 @@ class ProtocolService:
         self._create_journey(uow, session, now)
 
     def _create_journey(self, uow: UnitOfWork, session: ProtocolSession, now: datetime) -> None:
-        """Objetivo anotado no início da sessão; tarefas placeholder do catálogo (a escolha real das tarefas é
-        responsabilidade do agente conversacional, fora do journey-core)."""
         journey = Journey(
             journey_id=new_id(),
             patient_id=session.patient_id,

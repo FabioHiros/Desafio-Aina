@@ -1,5 +1,3 @@
-"""Conclusão de tarefas da jornada, sem banco nem HTTP."""
-
 from dataclasses import dataclass
 from datetime import date
 

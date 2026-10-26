@@ -1,14 +1,3 @@
-"""Protocolo clínico data-driven: o template (JSON) é a única fonte das perguntas e das regras.
-
-O motor é genérico: `ProtocolTemplate.evaluate()` interpreta qualquer template válido, sem nenhum
-`if template_id == ...`. Regras de skip são dados:
-
-    {"after": "q2", "when": {"sum": ["q1", "q2"], "op": "lt", "value": 3}, "action": "end_block"}
-
-"depois de responder q2, se q1 + q2 < 3, encerra o bloco". Templates têm um único bloco, então encerrar o
-bloco conclui o protocolo com a pontuação parcial (soma das respostas dadas). Nenhuma fórmula além da soma.
-"""
-
 import operator
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -44,8 +33,6 @@ class Question(_TemplateModel):
 
 
 class SumCondition(_TemplateModel):
-    """Verdadeira quando a soma das respostas de `sum` comparada com `value` (via `op`) é verdadeira."""
-
     sum: tuple[str, ...] = Field(min_length=1)
     op: Comparison
     value: int
@@ -64,7 +51,7 @@ class SkipRule(_TemplateModel):
 @dataclass(frozen=True, slots=True)
 class NextQuestion:
     question: Question
-    position: int  # 1-based
+    position: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,7 +73,6 @@ class ProtocolTemplate(_TemplateModel):
 
     @model_validator(mode="after")
     def check_consistency(self) -> Self:
-        """Um template inconsistente falha ao carregar, não no meio da sessão de um paciente."""
         values = [option.value for option in self.scale]
         if len(set(values)) != len(values):
             raise ValueError("valores da escala repetidos")
@@ -110,10 +96,6 @@ class ProtocolTemplate(_TemplateModel):
         return frozenset(option.value for option in self.scale)
 
     def evaluate(self, answers: Mapping[str, int]) -> Progress:
-        """Dado o que já foi respondido, decide: próxima pergunta, fim por skip ou fim normal.
-
-        Percorre as perguntas em ordem; após cada pergunta respondida, aplica as regras ligadas a ela.
-        """
         for position, question in enumerate(self.questions, start=1):
             if question.id not in answers:
                 return NextQuestion(question=question, position=position)
@@ -124,9 +106,6 @@ class ProtocolTemplate(_TemplateModel):
 
     def _score(self, answers: Mapping[str, int]) -> int:
         return sum(answers[q.id] for q in self.questions if q.id in answers)
-
-
-# ─────────────── Sessão ───────────────
 
 
 class SessionStatus(StrEnum):
@@ -144,12 +123,10 @@ class Answer:
 
 @dataclass(frozen=True, slots=True)
 class ProtocolSession:
-    """Sessão de um paciente em um template. Respostas gravadas não mudam (auditoria)."""
-
     session_id: str
     patient_id: str
     template_id: str
-    objetivo: str = field(repr=False)  # texto livre, pode conter dado de saúde
+    objetivo: str = field(repr=False)
     status: SessionStatus
     score: int | None
     ended_by_skip: bool

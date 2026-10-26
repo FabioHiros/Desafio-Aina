@@ -1,5 +1,3 @@
-"""Avaliação de follow-up sem banco nem HTTP, incluindo o cooldown de 72h (teste obrigatório)."""
-
 from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
@@ -67,7 +65,6 @@ def test_eligible_emits_followup_eligible_with_template_key(world: World) -> Non
 
 
 def test_cooldown_72h(world: World) -> None:
-    """Obrigatório: 1ª avaliação elegível, 2ª recusada por cooldown, após 72h elegível de novo."""
     assert world.service.evaluate("p-1") == ELIGIBLE
 
     world.clock.advance(hours=1)
@@ -76,7 +73,7 @@ def test_cooldown_72h(world: World) -> None:
     world.clock.advance(hours=70, minutes=59)
     world.skipped(SkipReason.COOLDOWN)
 
-    world.clock.advance(minutes=1)  # exatamente 72h depois do elegível
+    world.clock.advance(minutes=1)
     assert world.service.evaluate("p-1") == ELIGIBLE
 
     assert [name for name, _ in world.events()] == [
@@ -88,12 +85,11 @@ def test_cooldown_72h(world: World) -> None:
 
 
 def test_skipped_evaluations_do_not_restart_the_cooldown(world: World) -> None:
-    """O cooldown conta a partir do último follow-up elegível, não da última avaliação."""
     world.service.evaluate("p-1")
     for _ in range(5):
         world.clock.advance(hours=10)
         world.service.evaluate("p-1")
-    world.clock.advance(hours=22)  # 72h desde o elegível
+    world.clock.advance(hours=22)
 
     assert world.service.evaluate("p-1") == ELIGIBLE
 

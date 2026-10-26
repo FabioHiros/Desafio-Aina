@@ -1,9 +1,3 @@
-"""Avaliação de elegibilidade de follow-up. Não envia mensagem: só decide e registra o evento.
-
-Leitura dos fatos, decisão e evento acontecem na mesma transação. Com BEGIN IMMEDIATE (core/database.py),
-avaliações simultâneas do mesmo paciente são serializadas: o cooldown não deixa passar dois follow-ups.
-"""
-
 from app.core.clock import Clock
 from app.core.errors import PatientNotFoundError
 from app.models.events import EventName, FollowupEligible, FollowupSkipped

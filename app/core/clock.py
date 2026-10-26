@@ -3,8 +3,6 @@ from typing import Protocol
 
 
 class Clock(Protocol):
-    """Fonte única de "agora" (sempre UTC). Nenhum código chama datetime.now() diretamente."""
-
     def now(self) -> datetime: ...
 
 

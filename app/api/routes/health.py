@@ -13,6 +13,6 @@ def health(session_factory: SessionFactoryDep) -> HealthOut | JSONResponse:
     try:
         with session_factory() as session:
             session.execute(text("SELECT 1"))
-    except Exception:  # qualquer falha de banco significa "indisponível"
+    except Exception:
         return JSONResponse(status_code=503, content=HealthOut(status="degraded", database="unavailable").model_dump())
     return HealthOut(status="ok", database="ok")

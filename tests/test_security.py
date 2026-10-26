@@ -28,7 +28,6 @@ def test_different_salts_produce_different_hashes() -> None:
 
 
 def test_phone_and_patient_id_use_independent_salts(hasher: Hasher) -> None:
-    # Mesmo valor, finalidades diferentes: hashes diferentes.
     assert hasher.hash_phone("same-value") != hasher.hash_patient_id("same-value")
 
 

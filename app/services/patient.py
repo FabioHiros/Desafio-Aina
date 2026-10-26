@@ -1,5 +1,3 @@
-"""Regras de negócio do paciente: cadastro, consulta e aceite dos termos."""
-
 from app.core.clock import Clock
 from app.core.errors import PatientAlreadyExistsError, PatientNotFoundError
 from app.core.ids import new_id
@@ -45,7 +43,6 @@ class PatientService:
             return self._get_or_raise(uow, patient_id)
 
     def accept_terms(self, patient_id: str) -> Patient:
-        """Idempotente: aceitar de novo não altera a data nem gera evento duplicado."""
         with self._uow as uow:
             patient = self._get_or_raise(uow, patient_id)
             if patient.terms_accepted:

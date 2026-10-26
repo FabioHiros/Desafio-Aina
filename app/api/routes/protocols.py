@@ -23,7 +23,6 @@ router = APIRouter(tags=["protocols"])
     },
 )
 def start_protocol(patient_id: UUID, body: ProtocolStart, service: ProtocolServiceDep) -> ProtocolSessionOut:
-    """Inicia uma sessão a partir de `template_id` e devolve a primeira pergunta."""
     return to_out(service.start(str(patient_id), body.template_id, body.objetivo))
 
 
@@ -40,10 +39,6 @@ def start_protocol(patient_id: UUID, body: ProtocolStart, service: ProtocolServi
     },
 )
 def answer(session_id: UUID, body: AnswerIn, service: ProtocolServiceDep) -> ProtocolSessionOut:
-    """Grava a resposta e devolve a próxima pergunta ou o resultado final (com a jornada criada).
-
-    Reenviar a mesma resposta não grava nada e devolve o mesmo conteúdo da primeira vez.
-    """
     return to_out(service.answer(str(session_id), body.question_id, body.value))
 
 
@@ -51,7 +46,6 @@ def answer(session_id: UUID, body: AnswerIn, service: ProtocolServiceDep) -> Pro
     "/protocol-sessions/{session_id}", response_model=ProtocolSessionOut, responses={404: {"model": ErrorResponse}}
 )
 def get_session(session_id: UUID, service: ProtocolServiceDep) -> ProtocolSessionOut:
-    """Estado atual da sessão (útil para retomar após uma falha de comunicação)."""
     return to_out(service.get(str(session_id)))
 
 

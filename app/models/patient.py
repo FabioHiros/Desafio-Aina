@@ -1,8 +1,3 @@
-"""Modelos de domínio do paciente: dataclasses imutáveis, sem dependência de banco ou HTTP.
-
-Campos com PII usam repr=False para nunca aparecerem em logs ou tracebacks por acidente.
-"""
-
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import StrEnum
@@ -29,8 +24,6 @@ class Patient:
 
 @dataclass(frozen=True, slots=True)
 class NewPatient:
-    """Dados de entrada do cadastro, já validados e normalizados pela camada de API."""
-
     phone: str = field(repr=False)
     name: str = field(repr=False)
     birth_date: date = field(repr=False)

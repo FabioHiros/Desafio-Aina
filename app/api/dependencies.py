@@ -1,10 +1,3 @@
-"""Montagem dos objetos por requisição (injeção de dependência via FastAPI).
-
-Único lugar que escolhe as implementações concretas das interfaces de repositories/interfaces.py.
-Singletons (fábrica de sessões, relógio, hasher) vivem em app.state, criados em create_app().
-Cada requisição recebe sua própria unidade de trabalho; nada de banco é compartilhado entre requisições.
-"""
-
 from typing import Annotated
 
 from fastapi import Depends, Request

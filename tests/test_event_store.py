@@ -15,8 +15,6 @@ HASHER = Hasher(phone_salt=SecretStr("phone-salt-0000000"), patient_id_salt=Secr
 
 
 class LeakyEvent(DomainEvent):
-    """Simula alguém adicionando um campo proibido a um evento no futuro."""
-
     event_name = EventName.PATIENT_CREATED
     phone: str
 
@@ -29,9 +27,6 @@ def store(clock: FakeClock) -> EventStore:
 @pytest.fixture
 def uow(session_factory: sessionmaker[Session]) -> SqlAlchemyUnitOfWork:
     return SqlAlchemyUnitOfWork(session_factory)
-
-
-# ─────────────── EventStore (unidade, banco real) ───────────────
 
 
 def test_append_hashes_patient_id(store: EventStore, uow: SqlAlchemyUnitOfWork) -> None:
@@ -94,7 +89,7 @@ def test_exists_since_respects_the_window(store: EventStore, uow: SqlAlchemyUnit
 
 def test_events_without_commit_are_discarded(store: EventStore, uow: SqlAlchemyUnitOfWork) -> None:
     with uow:
-        store.append(uow, "p-1", FollowupEligible(template_key="a"))  # sem commit
+        store.append(uow, "p-1", FollowupEligible(template_key="a"))
 
     with uow:
         assert store.list_by_patient(uow, "p-1") == []
@@ -113,16 +108,13 @@ def test_event_is_rolled_back_with_the_failed_operation(store: EventStore, uow: 
         assert store.list_by_patient(uow, "p-1") == []
 
 
-# ─────────────── GET /events ───────────────
-
-
 def test_list_events_returns_envelope(client: TestClient, patient_id: str) -> None:
     response = client.get("/events", params={"patient_id": patient_id})
 
     assert response.status_code == 200
     first = response.json()[0]
     assert set(first) == {"event_id", "occurred_at", "event_name", "patient_id_hash", "properties"}
-    assert patient_id not in response.text  # só o hash sai na trilha
+    assert patient_id not in response.text
 
 
 def test_list_events_for_unknown_patient_is_empty(client: TestClient) -> None:

@@ -1,5 +1,3 @@
-"""Testes obrigatórios de PII: telefone, nome e data de nascimento nunca saem do cadastro."""
-
 import json
 import logging
 
@@ -16,7 +14,6 @@ from tests.fakes import FakeClock
 
 
 def stored_events(settings: Settings) -> str:
-    """A tabela events lida direto do banco, sem passar pela API."""
     engine = create_engine(settings.database_url)
     with engine.connect() as connection:
         rows = connection.execute(text("SELECT * FROM events")).fetchall()
@@ -29,13 +26,12 @@ def test_events_never_contain_pii(client: TestClient) -> None:
     client.post(f"/patients/{patient_id}/terms")
 
     trail = client.get("/events", params={"patient_id": patient_id}).text
-    assert json.loads(trail)  # a trilha não está vazia
+    assert json.loads(trail)
     for value in PII_VALUES:
         assert value not in trail
 
 
 def test_persisted_events_never_contain_pii(client: TestClient, patient_id: str, settings: Settings) -> None:
-    """Além da resposta da API: lê a tabela events direto do banco."""
     dumped = stored_events(settings)
     assert dumped != "[]"
     for value in PII_VALUES:
@@ -61,12 +57,12 @@ def test_invalid_phone_is_not_echoed(client: TestClient) -> None:
 def test_logs_never_contain_pii(client: TestClient, caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.DEBUG):
         patient_id = client.post("/patients", json=PATIENT_PAYLOAD).json()["patient_id"]
-        client.post("/patients", json=PATIENT_PAYLOAD)  # 409
-        client.post("/patients", json={**PATIENT_PAYLOAD, "sex": "X"})  # 422
+        client.post("/patients", json=PATIENT_PAYLOAD)
+        client.post("/patients", json={**PATIENT_PAYLOAD, "sex": "X"})
         client.get("/events", params={"patient_id": patient_id})
 
-    logged = caplog.text  # inclui tracebacks, sem a máscara do JsonFormatter
-    assert "POST /patients -> 409" in logged  # a captura dos logs da aplicação funcionou
+    logged = caplog.text
+    assert "POST /patients -> 409" in logged
     for value in PII_VALUES:
         assert value not in logged
 
@@ -86,7 +82,6 @@ def test_unexpected_error_returns_generic_500_without_pii(settings: Settings, cl
 
 
 def test_objective_never_reaches_the_event_trail(client: TestClient, patient_id: str, settings: Settings) -> None:
-    """O objetivo é texto livre e pode conter dado de saúde: fica na sessão e na jornada, nunca nos eventos."""
     objetivo = "Controlar a ansiedade depois do diagnóstico"
     session_id = client.post(
         f"/patients/{patient_id}/protocols", json={"template_id": "phq9", "objetivo": objetivo}
@@ -104,7 +99,6 @@ def test_objective_never_reaches_the_event_trail(client: TestClient, patient_id:
 def test_full_journey_trail_never_contains_pii(
     client: TestClient, settings: Settings, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Fluxo completo, gerando todos os tipos de evento: nenhum carrega PII, o phone_hash ou o patient_id."""
     with caplog.at_level(logging.DEBUG):
         created = client.post("/patients", json=PATIENT_PAYLOAD)
         assert created.status_code == 201
@@ -145,9 +139,8 @@ def test_full_journey_trail_never_contains_pii(
 
     stored = stored_events(settings)
 
-    # caplog.text inclui tracebacks e não passa pela máscara do JsonFormatter: é a checagem mais estrita.
     logged = caplog.text
-    assert "POST /followups/evaluate -> 200" in logged  # a captura dos logs da aplicação funcionou
+    assert "POST /followups/evaluate -> 200" in logged
 
     phone_hash = keyed_hash(PHONE_DIGITS, settings.phone_hash_salt)
     for value in (*PII_VALUES, phone_hash):

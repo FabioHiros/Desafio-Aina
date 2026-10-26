@@ -1,5 +1,3 @@
-"""Jornada: criada quando o protocolo conclui, com o objetivo da sessão e tarefas placeholder."""
-
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
@@ -29,7 +27,7 @@ class Journey:
     journey_id: str
     patient_id: str
     session_id: str
-    objetivo: str = field(repr=False)  # texto livre, pode conter dado de saúde
+    objetivo: str = field(repr=False)
     status: JourneyStatus
     created_at: datetime
     completed_at: datetime | None

@@ -1,5 +1,3 @@
-"""Repositórios de sessão de protocolo e de jornada, com banco real, através do Unit of Work."""
-
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
@@ -72,9 +70,6 @@ def new_journey(journey_id: str = "j-1", session_id: str = "s-1", created_at: da
     )
 
 
-# ─────────────── Sessões de protocolo ───────────────
-
-
 def test_session_round_trip_with_answers_in_order(uow: SqlAlchemyUnitOfWork) -> None:
     with uow:
         uow.sessions.add(new_session())
@@ -140,9 +135,6 @@ def test_unknown_session_is_none(uow: SqlAlchemyUnitOfWork) -> None:
         assert uow.sessions.get("nope") is None
 
 
-# ─────────────── Jornadas ───────────────
-
-
 def test_journey_round_trip_with_tasks_in_order(uow: SqlAlchemyUnitOfWork) -> None:
     with uow:
         uow.sessions.add(new_session(status=SessionStatus.COMPLETED))
@@ -195,7 +187,7 @@ def test_current_journey_prefers_active_then_latest(uow: SqlAlchemyUnitOfWork) -
         uow.journeys.add(new_journey("j-2", "s-2", NOW + timedelta(days=1)))
         uow.journeys.complete("j-2", NOW + timedelta(days=1))
         latest = uow.journeys.get_current_for_patient("p-1")
-        uow.journeys.add(new_journey("j-3", "s-3", NOW - timedelta(days=1)))  # mais antiga, mas ativa
+        uow.journeys.add(new_journey("j-3", "s-3", NOW - timedelta(days=1)))
         active = uow.journeys.get_current_for_patient("p-1")
 
     assert latest is not None

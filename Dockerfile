@@ -1,16 +1,11 @@
-# Imagem da API. Salts não entram na imagem: vêm do ambiente em tempo de execução (ver compose.yaml).
-
 FROM python:3.12-slim AS builder
 COPY --from=ghcr.io/astral-sh/uv:0.13.5 /uv /bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 WORKDIR /app
-# Só as dependências de runtime, nas versões exatas do uv.lock.
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-
 FROM python:3.12-slim
-# Usuário sem privilégios; o banco SQLite fica no volume /data, o único diretório gravável.
 RUN useradd --system --uid 10001 --no-create-home app && mkdir /data && chown app /data
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv

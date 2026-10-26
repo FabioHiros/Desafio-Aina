@@ -1,5 +1,3 @@
-"""Sessões de protocolo sem banco nem HTTP: início, respostas idempotentes, conclusão e criação da jornada."""
-
 from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
@@ -88,9 +86,6 @@ def start(world: World, template_id: str = "phq9") -> SessionState:
     return world.service.start("p-1", template_id, "Perder 5kg em 3 meses")
 
 
-# ─────────────── Início ───────────────
-
-
 def test_start_returns_first_question_and_emits_event(world: World) -> None:
     state = start(world)
 
@@ -121,9 +116,6 @@ def test_only_one_session_in_progress(world: World) -> None:
     start(world)
     with pytest.raises(ProtocolInProgressError):
         start(world)
-
-
-# ─────────────── Skip logic e conclusão ───────────────
 
 
 def test_phq2_skip_completes_with_partial_score(world: World) -> None:
@@ -159,9 +151,6 @@ def test_engine_is_generic_for_another_template(world: World) -> None:
     state = world.answer_all(session_id, 1)
 
     assert (state.session.score, state.session.ended_by_skip) == (1, True)
-
-
-# ─────────────── Respostas idempotentes ───────────────
 
 
 def test_identical_resend_returns_same_state_without_recording(world: World) -> None:
@@ -233,9 +222,6 @@ def test_objective_never_reaches_events(world: World) -> None:
     assert "Perder 5kg" not in repr([e.properties for e in world.uow.events.events])
 
 
-# ─────────────── Jornada criada ao concluir ───────────────
-
-
 def test_no_journey_while_the_protocol_is_in_progress(world: World) -> None:
     session_id = start(world).session.session_id
     state = world.answer_all(session_id, 2, 1)
@@ -274,7 +260,6 @@ def test_resend_of_final_answer_returns_the_same_journey(world: World) -> None:
 
 
 def test_journey_failure_rolls_back_the_completion(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Sessão concluída, protocol_completed, jornada e journey_created: tudo junto ou nada."""
     session_id = start(world).session.session_id
     world.service.answer(session_id, "q1", 1)
 

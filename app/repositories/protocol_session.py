@@ -10,8 +10,6 @@ from app.repositories.tables import ProtocolAnswerRow, ProtocolSessionRow
 
 
 class SqlAlchemyProtocolSessionRepository:
-    """Implementação SQLAlchemy de ProtocolSessionRepository (interfaces.py)."""
-
     def __init__(self, session: Session) -> None:
         self._session = session
 
@@ -32,7 +30,6 @@ class SqlAlchemyProtocolSessionRepository:
         try:
             self._session.flush()
         except IntegrityError as exc:
-            # Índice único parcial: uma sessão em andamento por paciente.
             if "protocol_sessions.patient_id" in str(exc.orig):
                 raise ProtocolInProgressError from None
             raise
@@ -72,7 +69,6 @@ class SqlAlchemyProtocolSessionRepository:
         try:
             self._session.flush()
         except IntegrityError as exc:
-            # PK (session_id, question_id): a mesma pergunta não é gravada duas vezes.
             if "protocol_answers" in str(exc.orig):
                 raise AnswerAlreadyRecordedError from None
             raise

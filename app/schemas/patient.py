@@ -1,5 +1,3 @@
-"""Contratos HTTP do paciente. O que não está aqui não sai na resposta."""
-
 import re
 from datetime import date, datetime
 from typing import Annotated
@@ -23,9 +21,8 @@ class PatientCreate(BaseModel):
     @field_validator("phone")
     @classmethod
     def normalize_phone(cls, value: str) -> str:
-        # Normalizar antes do hash: "+55 (11) 99999-8888" e "5511999998888" são o mesmo paciente.
         digits = _NON_DIGITS.sub("", value)
-        if not 10 <= len(digits) <= 15:  # faixa do E.164
+        if not 10 <= len(digits) <= 15:
             raise ValueError("telefone deve ter entre 10 e 15 dígitos")
         return digits
 
@@ -47,8 +44,6 @@ class PatientCreate(BaseModel):
 
 
 class PatientOut(BaseModel):
-    """Sem telefone, nome ou data de nascimento: minimização de dados na resposta."""
-
     patient_id: str
     sex: Sex
     terms_accepted: bool

@@ -14,7 +14,6 @@ from app.main import create_app
 from app.repositories.tables import init_db
 from tests.fakes import FakeClock
 
-# Dados fictícios, mas com formato real: os testes de PII procuram exatamente estes valores.
 PATIENT_PAYLOAD: dict[str, Any] = {
     "phone": "+55 (11) 98765-4321",
     "name": "Maria Teste da Silva",
@@ -26,12 +25,8 @@ PHONE_DIGITS = "5511987654321"
 PII_VALUES = (PHONE_DIGITS, "98765-4321", "987654321", "Maria Teste da Silva", "1990-05-10")
 
 
-# ─────────────── Banco ───────────────
-
-
 @pytest.fixture
 def engine(tmp_path: Path) -> Iterator[Engine]:
-    """Banco SQLite novo por teste."""
     engine = create_db_engine(f"sqlite:///{tmp_path / 'test.db'}")
     init_db(engine)
     yield engine
@@ -41,9 +36,6 @@ def engine(tmp_path: Path) -> Iterator[Engine]:
 @pytest.fixture
 def session_factory(engine: Engine) -> sessionmaker[Session]:
     return create_session_factory(engine)
-
-
-# ─────────────── Aplicação ───────────────
 
 
 @pytest.fixture

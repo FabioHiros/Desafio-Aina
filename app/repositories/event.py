@@ -9,8 +9,6 @@ from app.repositories.tables import EventRow
 
 
 class SqlAlchemyEventRepository:
-    """Implementação SQLAlchemy de EventRepository (interfaces.py). O banco também recusa update/delete."""
-
     def __init__(self, session: Session) -> None:
         self._session = session
 
@@ -30,7 +28,7 @@ class SqlAlchemyEventRepository:
             properties=properties,
         )
         self._session.add(row)
-        self._session.flush()  # atribui a position
+        self._session.flush()
         return _to_domain(row)
 
     def list_by_patient_hash(self, patient_id_hash: str) -> list[Event]:

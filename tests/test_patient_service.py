@@ -1,5 +1,3 @@
-"""Regras de negócio do paciente testadas sem banco nem HTTP, com a unidade de trabalho em memória."""
-
 from dataclasses import dataclass, replace
 from datetime import date
 from typing import Any

@@ -11,9 +11,6 @@ def event_names(client: TestClient, patient_id: str) -> list[str]:
     return [event["event_name"] for event in client.get("/events", params={"patient_id": patient_id}).json()]
 
 
-# ─────────────── Cadastro ───────────────
-
-
 def test_create_patient_returns_201_without_pii(client: TestClient) -> None:
     response = client.post("/patients", json=PATIENT_PAYLOAD)
 
@@ -86,9 +83,6 @@ def test_get_unknown_patient_returns_404(client: TestClient) -> None:
 
 def test_malformed_patient_id_returns_422(client: TestClient) -> None:
     assert client.get("/patients/not-a-uuid").status_code == 422
-
-
-# ─────────────── Aceite posterior dos termos ───────────────
 
 
 def test_accept_terms_after_registration(client: TestClient, clock: FakeClock) -> None:
